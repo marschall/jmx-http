@@ -1,6 +1,14 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.util.Optional;
 import java.util.Set;
 
 import javax.management.Attribute;
@@ -22,56 +30,55 @@ import javax.management.ObjectName;
 import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
+import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
+import com.github.marschall.jmxhttp.common.command.CreateMBean;
+import com.github.marschall.jmxhttp.common.command.GetAttribute;
+import com.github.marschall.jmxhttp.common.command.GetAttributes;
 import com.github.marschall.jmxhttp.common.command.GetDefaultDomain;
 import com.github.marschall.jmxhttp.common.command.GetDomains;
 import com.github.marschall.jmxhttp.common.command.GetMBeanCount;
 import com.github.marschall.jmxhttp.common.command.GetMBeanInfo;
 import com.github.marschall.jmxhttp.common.command.GetObjectInstance;
+import com.github.marschall.jmxhttp.common.command.Invoke;
 import com.github.marschall.jmxhttp.common.command.IsInstanceOf;
 import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
+import com.github.marschall.jmxhttp.common.command.SetAttribute;
+import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 
-public class JmxHttpConnection implements MBeanServerConnection {
-
-  @Override
-  public ObjectInstance createMBean(String className, ObjectName name)
-      throws ReflectionException, InstanceAlreadyExistsException,
-      MBeanRegistrationException, MBeanException, NotCompliantMBeanException,
-      IOException {
-    // TODO Auto-generated method stub
-    return null;
+final class JmxHttpConnection implements MBeanServerConnection {
+  
+  private final HttpURLConnection urlConnection;
+  private final Optional<String> credentials;
+  private final ClassLoader classLoader;
+  
+  protected JmxHttpConnection(HttpURLConnection urlConnection, Optional<String> credentials) {
+    this.urlConnection = urlConnection;
+    this.credentials = credentials;
+    this.classLoader = this.getClass().getClassLoader();
   }
 
   @Override
-  public ObjectInstance createMBean(String className, ObjectName name,
-      ObjectName loaderName) throws ReflectionException,
-      InstanceAlreadyExistsException, MBeanRegistrationException,
-      MBeanException, NotCompliantMBeanException, InstanceNotFoundException,
-      IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public ObjectInstance createMBean(String className, ObjectName name) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, IOException {
+    return send(new CreateMBean(className, name, null, null, null));
   }
 
   @Override
-  public ObjectInstance createMBean(String className, ObjectName name,
-      Object[] params, String[] signature) throws ReflectionException,
-      InstanceAlreadyExistsException, MBeanRegistrationException,
-      MBeanException, NotCompliantMBeanException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public ObjectInstance createMBean(String className, ObjectName name, ObjectName loaderName) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, InstanceNotFoundException, IOException {
+    return send(new CreateMBean(className, name, loaderName, null, null));
   }
 
   @Override
-  public ObjectInstance createMBean(String className, ObjectName name,
-      ObjectName loaderName, Object[] params, String[] signature)
-      throws ReflectionException, InstanceAlreadyExistsException,
-      MBeanRegistrationException, MBeanException, NotCompliantMBeanException,
-      InstanceNotFoundException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public ObjectInstance createMBean(String className, ObjectName name, Object[] params, String[] signature) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, IOException {
+    return send(new CreateMBean(className, name, null, params, signature));
+  }
+
+  @Override
+  public ObjectInstance createMBean(String className, ObjectName name, ObjectName loaderName, Object[] params, String[] signature) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, InstanceNotFoundException, IOException {
+    return send(new CreateMBean(className, name, loaderName, params, signature));
   }
 
   @Override
@@ -106,39 +113,27 @@ public class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public Object getAttribute(ObjectName name, String attribute) throws MBeanException, AttributeNotFoundException, InstanceNotFoundException, ReflectionException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+    return send(new GetAttribute(name, attribute));
   }
 
   @Override
-  public AttributeList getAttributes(ObjectName name, String[] attributes)
-      throws InstanceNotFoundException, ReflectionException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public AttributeList getAttributes(ObjectName name, String[] attributes) throws InstanceNotFoundException, ReflectionException, IOException {
+    return send(new GetAttributes(name, attributes));
   }
 
   @Override
-  public void setAttribute(ObjectName name, Attribute attribute)
-      throws InstanceNotFoundException, AttributeNotFoundException,
-      InvalidAttributeValueException, MBeanException, ReflectionException,
-      IOException {
-    // TODO Auto-generated method stub
-    
+  public void setAttribute(ObjectName name, Attribute attribute) throws InstanceNotFoundException, AttributeNotFoundException, InvalidAttributeValueException, MBeanException, ReflectionException, IOException {
+    send(new SetAttribute(name, attribute));
   }
 
   @Override
-  public AttributeList setAttributes(ObjectName name, AttributeList attributes)
-      throws InstanceNotFoundException, ReflectionException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public AttributeList setAttributes(ObjectName name, AttributeList attributes) throws InstanceNotFoundException, ReflectionException, IOException {
+    return send(new SetAttributes(name, attributes));
   }
 
   @Override
-  public Object invoke(ObjectName name, String operationName, Object[] params,
-      String[] signature) throws InstanceNotFoundException, MBeanException,
-      ReflectionException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public Object invoke(ObjectName name, String operationName, Object[] params, String[] signature) throws InstanceNotFoundException, MBeanException, ReflectionException, IOException {
+    return send(new Invoke(name, operationName, params, signature));
   }
 
   @Override
@@ -191,10 +186,38 @@ public class JmxHttpConnection implements MBeanServerConnection {
     return send(new IsInstanceOf(name, className));
   }
   
-  private <R> R send(Command<R> command) {
-    // TODO Auto-generated method stub
-    // TODO check if result is an exception
+  private synchronized <R> R send(Command<R> command) throws IOException {
+    urlConnection.setDoOutput(true);
+    urlConnection.setChunkedStreamingMode(0);
+    urlConnection.setRequestMethod("POST");
+    if (credentials.isPresent()) {
+      urlConnection.setRequestProperty ("Authorization", credentials.get());
+    }
+//    urlConnection.setRequestProperty("Connection", "keep-alive");
+    try (OutputStream out = urlConnection.getOutputStream();
+        ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
+      stream.writeObject(command);
+    }
+    
+    int status = urlConnection.getResponseCode();
+    if (status == 100) {
+      try (InputStream in = urlConnection.getInputStream();
+          ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
+        Object result = stream.readObject();
+        if (result instanceof Exception) {
+          throw (Exception) result;
+        } else {
+          return (R) result;
+        }
+      }
+    } else {
+
+    }
     return null;
+  }
+
+  void close() {
+    this.urlConnection.disconnect();
   }
 
 }

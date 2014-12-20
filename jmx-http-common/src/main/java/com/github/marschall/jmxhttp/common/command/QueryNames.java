@@ -4,23 +4,22 @@ import java.io.IOException;
 import java.util.Set;
 
 import javax.management.MBeanServerConnection;
-import javax.management.ObjectInstance;
 import javax.management.ObjectName;
 import javax.management.QueryExp;
 
-public final class QueryMBeans implements Command<Set<ObjectInstance>> {
-  
+public final class QueryNames implements Command<Set<ObjectName>> {
+
   private final ObjectName name;
   private final QueryExp query;
-  
-  public QueryMBeans(ObjectName name, QueryExp query) {
+
+  public QueryNames(ObjectName name, QueryExp query) {
     this.name = name;
     this.query = query;
   }
 
   @Override
-  public Set<ObjectInstance> execute(MBeanServerConnection connection) throws IOException {
-    return connection.queryMBeans(name, query);
+  public Set<ObjectName> execute(MBeanServerConnection connection) throws IOException {
+    return connection.queryNames(name, query);
   }
 
 }

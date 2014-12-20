@@ -38,13 +38,13 @@ public class RmiHttpServlet extends HttpServlet {
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
     
-    Command command;
+    Command<?> command;
     
     try (InputStream in = request.getInputStream();
         ObjectInputStream stream = new ClassLoaderObjectInputStream(in, this.classLoader)) {
       Object object = stream.readObject();
       if (object instanceof Command) {
-        command = (Command) object;
+        command = (Command<?>) object;
       } else {
         return;
       }
@@ -57,13 +57,15 @@ public class RmiHttpServlet extends HttpServlet {
     try {
       result = command.execute(this.server);
     } catch (IOException e) {
+      // TODO actually send exception to client
       sendError("command execution failed", e, response);
+      return;
     }
 
     try (OutputStream out = response.getOutputStream();
         ObjectOutputStream stream = new ObjectOutputStream(out)) {
       response.setContentType("application/x-java-serialized-object");
-      stream.writeObject(stream);
+      stream.writeObject(result);
     }
     
   }

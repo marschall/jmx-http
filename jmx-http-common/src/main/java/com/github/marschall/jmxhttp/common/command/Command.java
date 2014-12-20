@@ -4,8 +4,8 @@ import java.io.IOException;
 
 import javax.management.MBeanServerConnection;
 
-public interface Command {
+public interface Command<R> {
 
-  Object execute(MBeanServerConnection connection) throws IOException;
+  R execute(MBeanServerConnection connection) throws IOException;
   
 }

@@ -11,9 +11,9 @@ import javax.management.NotificationListener;
 import javax.management.remote.JMXConnector;
 import javax.security.auth.Subject;
 
-final class HttpConnector implements JMXConnector {
+final class JmxHttpConnector implements JMXConnector {
 
-  HttpConnector(URL url) {
+  JmxHttpConnector(URL url) {
     // TODO Auto-generated constructor stub
   }
 
@@ -32,13 +32,13 @@ final class HttpConnector implements JMXConnector {
   @Override
   public MBeanServerConnection getMBeanServerConnection() throws IOException {
     // TODO Auto-generated method stub
-    return null;
+    return new JmxHttpConnection();
   }
 
   @Override
   public MBeanServerConnection getMBeanServerConnection(Subject delegationSubject) throws IOException {
     // TODO Auto-generated method stub
-    return null;
+    return new JmxHttpConnection();
   }
 
   @Override

@@ -8,11 +8,11 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorProvider;
 import javax.management.remote.JMXServiceURL;
 
-public class HttpConnectorProvider implements JMXConnectorProvider {
+public class JmxHttpConnectorProvider implements JMXConnectorProvider {
 
   @Override
   public JMXConnector newJMXConnector(JMXServiceURL serviceURL, Map<String, ?> environment) throws IOException {
-    return new HttpConnector(getUrl(serviceURL));
+    return new JmxHttpConnector(getUrl(serviceURL));
   }
   
   private static URL getUrl(JMXServiceURL serviceURL) {

@@ -23,8 +23,16 @@ import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
 import com.github.marschall.jmxhttp.common.command.Command;
+import com.github.marschall.jmxhttp.common.command.GetDefaultDomain;
+import com.github.marschall.jmxhttp.common.command.GetDomains;
+import com.github.marschall.jmxhttp.common.command.GetMBeanCount;
+import com.github.marschall.jmxhttp.common.command.GetMBeanInfo;
+import com.github.marschall.jmxhttp.common.command.GetObjectInstance;
+import com.github.marschall.jmxhttp.common.command.IsInstanceOf;
+import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
+import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 
 public class JmxHttpConnection implements MBeanServerConnection {
 
@@ -67,17 +75,13 @@ public class JmxHttpConnection implements MBeanServerConnection {
   }
 
   @Override
-  public void unregisterMBean(ObjectName name)
-      throws InstanceNotFoundException, MBeanRegistrationException, IOException {
-    // TODO Auto-generated method stub
-    
+  public void unregisterMBean(ObjectName name) throws InstanceNotFoundException, MBeanRegistrationException, IOException {
+    send(new UnregisterMBean(name));
   }
 
   @Override
-  public ObjectInstance getObjectInstance(ObjectName name)
-      throws InstanceNotFoundException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public ObjectInstance getObjectInstance(ObjectName name) throws InstanceNotFoundException, IOException {
+    return send(new GetObjectInstance(name));
   }
 
   @Override
@@ -92,20 +96,16 @@ public class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public boolean isRegistered(ObjectName name) throws IOException {
-    // TODO Auto-generated method stub
-    return false;
+    return send(new IsRegistered(name));
   }
 
   @Override
   public Integer getMBeanCount() throws IOException {
-    // TODO Auto-generated method stub
-    return null;
+    return send(new GetMBeanCount());
   }
 
   @Override
-  public Object getAttribute(ObjectName name, String attribute)
-      throws MBeanException, AttributeNotFoundException,
-      InstanceNotFoundException, ReflectionException, IOException {
+  public Object getAttribute(ObjectName name, String attribute) throws MBeanException, AttributeNotFoundException, InstanceNotFoundException, ReflectionException, IOException {
     // TODO Auto-generated method stub
     return null;
   }
@@ -143,14 +143,12 @@ public class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public String getDefaultDomain() throws IOException {
-    // TODO Auto-generated method stub
-    return null;
+    return send(new GetDefaultDomain());
   }
 
   @Override
   public String[] getDomains() throws IOException {
-    // TODO Auto-generated method stub
-    return null;
+    return send(new GetDomains());
   }
 
   @Override
@@ -184,21 +182,18 @@ public class JmxHttpConnection implements MBeanServerConnection {
   }
 
   @Override
-  public MBeanInfo getMBeanInfo(ObjectName name)
-      throws InstanceNotFoundException, IntrospectionException,
-      ReflectionException, IOException {
-    // TODO Auto-generated method stub
-    return null;
+  public MBeanInfo getMBeanInfo(ObjectName name) throws InstanceNotFoundException, IntrospectionException, ReflectionException, IOException {
+    return send(new GetMBeanInfo(name));
   }
 
   @Override
-  public boolean isInstanceOf(ObjectName name, String className)
-      throws InstanceNotFoundException, IOException {
-    // TODO Auto-generated method stub
-    return false;
+  public boolean isInstanceOf(ObjectName name, String className) throws InstanceNotFoundException, IOException {
+    return send(new IsInstanceOf(name, className));
   }
   
   private <R> R send(Command<R> command) {
+    // TODO Auto-generated method stub
+    // TODO check if result is an exception
     return null;
   }
 

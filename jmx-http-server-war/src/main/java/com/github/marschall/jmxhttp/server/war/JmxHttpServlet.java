@@ -13,6 +13,7 @@ import java.lang.reflect.Proxy;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -21,7 +22,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import com.github.marschall.jmxhttp.common.command.Command;
 
-public class RmiHttpServlet extends HttpServlet {
+public class JmxHttpServlet extends HttpServlet {
   
   private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
 
@@ -56,10 +57,9 @@ public class RmiHttpServlet extends HttpServlet {
     Object result;
     try {
       result = command.execute(this.server);
-    } catch (IOException e) {
-      // TODO actually send exception to client
-      sendError("command execution failed", e, response);
-      return;
+    } catch (JMException | IOException e) {
+      LOG.log(Level.WARNING, "exception while executing operation", e);
+      result = e;
     }
 
     try (OutputStream out = response.getOutputStream();

@@ -203,9 +203,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
     if (status == 100) {
       try (InputStream in = urlConnection.getInputStream();
           ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
-        Object result = stream.readObject();
+        Object result;
+        try {
+          result = stream.readObject();
+        } catch (ClassNotFoundException e) {
+          throw new IOException("class not found", e);
+        }
         if (result instanceof Exception) {
-          throw (Exception) result;
+          throw new IOException("exception occurred on server", (Exception) result);
+//          throw (Exception) result;
         } else {
           return (R) result;
         }

@@ -13,12 +13,14 @@ import com.sun.net.httpserver.HttpServer;
 public class JmxHttpServer {
   
   private CopyOnWriteArrayList<HttpServer> servers;
+  private final int port;
 
-  public JmxHttpServer() {
+  public JmxHttpServer(int port) {
+    this.port = port;
     this.servers = new CopyOnWriteArrayList<>();
   }
 
-  public void startOn(int port) throws IOException {
+  public void start() throws IOException {
     int backlog = 0; // system default
     Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
     while (networkInterfaces.hasMoreElements()) {

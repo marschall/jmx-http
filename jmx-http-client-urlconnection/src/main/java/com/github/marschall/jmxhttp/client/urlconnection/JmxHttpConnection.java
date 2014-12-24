@@ -54,11 +54,13 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private final HttpURLConnection urlConnection;
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
+  private final Notifier notifier;
   
-  protected JmxHttpConnection(HttpURLConnection urlConnection, Optional<String> credentials) {
+  protected JmxHttpConnection(HttpURLConnection urlConnection, Optional<String> credentials, Notifier notifier) {
     this.urlConnection = urlConnection;
     this.credentials = credentials;
     this.classLoader = this.getClass().getClassLoader();
+    this.notifier = notifier;
   }
 
   @Override
@@ -186,7 +188,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
     return send(new IsInstanceOf(name, className));
   }
   
-  private synchronized <R> R send(Command<R> command) throws IOException {
+  private <R> R sendProtected(Command<R> command) throws IOException {
     urlConnection.setDoOutput(true);
     urlConnection.setChunkedStreamingMode(0);
     urlConnection.setRequestMethod("POST");
@@ -207,9 +209,11 @@ final class JmxHttpConnection implements MBeanServerConnection {
         try {
           result = stream.readObject();
         } catch (ClassNotFoundException e) {
+          // REVIEW will trigger listeners probably ok
           throw new IOException("class not found", e);
         }
         if (result instanceof Exception) {
+          // REVIEW will trigger listeners, not sure if intended
           throw new IOException("exception occurred on server", (Exception) result);
 //          throw (Exception) result;
         } else {
@@ -217,9 +221,18 @@ final class JmxHttpConnection implements MBeanServerConnection {
         }
       }
     } else {
-
+      
     }
     return null;
+  }
+  
+  private synchronized <R> R send(Command<R> command) throws IOException {
+    try {
+      return this.sendProtected(command);
+    } catch (IOException e) {
+      this.notifier.exceptionOccurred(e);
+      throw e;
+    }
   }
 
   void close() {

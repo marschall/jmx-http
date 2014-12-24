@@ -12,10 +12,12 @@ import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -23,6 +25,7 @@ import javax.management.ListenerNotFoundException;
 import javax.management.MBeanServerConnection;
 import javax.management.NotificationFilter;
 import javax.management.NotificationListener;
+import javax.management.remote.JMXConnectionNotification;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
@@ -36,6 +39,8 @@ final class JmxHttpConnector implements JMXConnector {
   }
   
   private static final AtomicInteger ID_GENERATOR = new AtomicInteger(1);
+  
+  private final AtomicLong sequenceNumberGenerator = new AtomicLong(0);
 
   private final URL url;
   
@@ -45,24 +50,21 @@ final class JmxHttpConnector implements JMXConnector {
   
   private State state;
 
-  // TODO Auto-generated method stub
-  private final List<Subscription> connectionNotificationListeners;
-
   private JmxHttpConnection mBeanServerConnection;
+  
+  private final ListenerNotifier notifier;
 
   JmxHttpConnector(URL url) {
     this.url = url;
-    this.connectionNotificationListeners = new CopyOnWriteArrayList<>();
     this.id = ID_GENERATOR.incrementAndGet();
     this.sateLock = new ReentrantLock();
     this.state = State.INITIAL;
-    
+    this.notifier = new ListenerNotifier();
   }
 
   @Override
   public void connect() throws IOException {
     this.connect(null);
-
   }
 
   @Override
@@ -78,8 +80,8 @@ final class JmxHttpConnector implements JMXConnector {
       
       this.state = State.CONNECTED;
       Optional<String> credentials = extractCredentials(env);
-      this.mBeanServerConnection = new JmxHttpConnection(
-          (HttpURLConnection) this.url.openConnection(), credentials);
+      this.mBeanServerConnection = new JmxHttpConnection((HttpURLConnection) this.url.openConnection(), credentials, this.notifier);
+      this.notifier.connected();
     } finally {
       this.sateLock.unlock();
     }
@@ -124,6 +126,7 @@ final class JmxHttpConnector implements JMXConnector {
       if (this.mBeanServerConnection != null) {
         this.mBeanServerConnection.close();
       }
+      this.notifier.closed();
     } finally {
       this.sateLock.unlock();
     }
@@ -132,30 +135,21 @@ final class JmxHttpConnector implements JMXConnector {
 
   @Override
   public void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
-    this.connectionNotificationListeners.add(new Subscription(listener, filter, handback));
+    this.notifier.addConnectionNotificationListener(listener, filter, handback);
   }
 
   @Override
-  public void removeConnectionNotificationListener(NotificationListener listener)
-      throws ListenerNotFoundException {
-
-    Iterator<Subscription> iterator = this.connectionNotificationListeners.iterator();
-    while (iterator.hasNext()) {
-      Subscription subscription = iterator.next();
-      if (subscription.listener == listener) {
-        iterator.remove();
-      }
-    }
-
+  public void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
+    this.notifier.removeConnectionNotificationListener(listener);
   }
 
   @Override
   public void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
-    this.connectionNotificationListeners.remove(new Subscription(listener, filter, handback));
+    this.notifier.removeConnectionNotificationListener(listener, filter, handback);
   }
 
   @Override
-  public String getConnectionId() throws IOException {
+  public String getConnectionId() {
     AccessControlContext acc = AccessController.getContext();
     Subject subject = Subject.getSubject(acc);
     if (subject != null) {
@@ -183,6 +177,127 @@ final class JmxHttpConnector implements JMXConnector {
       this.handback = handback;
     }
 
+    @Override
+    public int hashCode() {
+      int prime = 31;
+      int result = 17;
+      result = prime * result + listener.hashCode();
+      result = prime * result + Objects.hashCode(filter.hashCode());
+      result = prime * result + Objects.hashCode(handback.hashCode());
+      return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) {
+        return true;
+      }
+      if (!(obj instanceof Subscription)) {
+        return false;
+      }
+      Subscription other = (Subscription) obj;
+      return this.listener == other.listener
+          && Objects.equals(this.filter, other.filter)
+          && Objects.equals(this.handback, other.handback);
+    }
+
+  }
+  
+  final class ListenerNotifier implements Notifier {
+
+    private final List<Subscription> connectionNotificationListeners;
+    
+    ListenerNotifier() {
+      this.connectionNotificationListeners = new CopyOnWriteArrayList<>();
+    }
+    
+    void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
+      this.connectionNotificationListeners.add(new Subscription(listener, filter, handback));
+    }
+
+    void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
+
+      boolean found = false;
+      Iterator<Subscription> iterator = this.connectionNotificationListeners.iterator();
+      while (iterator.hasNext()) {
+        Subscription subscription = iterator.next();
+        if (subscription.listener == listener) {
+          iterator.remove();
+          found = true;
+        }
+      }
+      if (!found) {
+        throw new ListenerNotFoundException();
+      }
+    }
+
+    void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
+      if (!this.connectionNotificationListeners.remove(new Subscription(listener, filter, handback))) {
+        throw new ListenerNotFoundException();
+      }
+    }
+    
+    @Override
+    public void connected() {
+      if (connectionNotificationListeners.isEmpty()) {
+        return;
+      }
+      
+      String type = JMXConnectionNotification.OPENED;
+      Object source = JmxHttpConnector.this;
+      String connectionId = getConnectionId();
+      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+      String message = "connection opened";
+      Object userData = null;
+      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+      
+      sendNotification(notification);
+    }
+    
+    @Override
+    public void closed() {
+      if (connectionNotificationListeners.isEmpty()) {
+        return;
+      }
+      
+      String type = JMXConnectionNotification.CLOSED;
+      Object source = JmxHttpConnector.this;
+      String connectionId = getConnectionId();
+      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+      String message = "connection closed";
+      Object userData = null;
+      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+      
+      sendNotification(notification);
+    }
+
+    @Override
+    public void exceptionOccurred(Exception exception) {
+      if (connectionNotificationListeners.isEmpty()) {
+        return;
+      }
+      
+      String type = JMXConnectionNotification.FAILED;
+      Object source = JmxHttpConnector.this;
+      String connectionId = getConnectionId();
+      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+      String message = "exception occurred";
+      Object userData = exception;
+      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+      
+      sendNotification(notification);
+    }
+
+    private void sendNotification(JMXConnectionNotification notification) {
+      for (Subscription subscription : connectionNotificationListeners) {
+        NotificationFilter filter = subscription.filter;
+        if (filter != null && !filter.isNotificationEnabled(notification)) {
+          continue;
+        }
+        subscription.listener.handleNotification(notification, subscription.handback);
+      }
+    }
+    
   }
 
 }

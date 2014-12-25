@@ -7,7 +7,9 @@ import java.net.URL;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -200,41 +202,44 @@ final class JmxHttpConnector implements JMXConnector {
   
   final class ListenerNotifier implements Notifier {
 
-    private final List<Subscription> connectionNotificationListeners;
+    // CopyOnWriteArrayList does not support Iterator#remove
+    private final List<Subscription> listeners;
     
     ListenerNotifier() {
-      this.connectionNotificationListeners = new CopyOnWriteArrayList<>();
+      this.listeners = Collections.synchronizedList(new ArrayList<>());
     }
     
     void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
-      this.connectionNotificationListeners.add(new Subscription(listener, filter, handback));
+      this.listeners.add(new Subscription(listener, filter, handback));
     }
 
     void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
 
-      boolean found = false;
-      Iterator<Subscription> iterator = this.connectionNotificationListeners.iterator();
-      while (iterator.hasNext()) {
-        Subscription subscription = iterator.next();
-        if (subscription.listener == listener) {
-          iterator.remove();
-          found = true;
+      synchronized (this.listeners) {
+        boolean found = false;
+        Iterator<Subscription> iterator = this.listeners.iterator();
+        while (iterator.hasNext()) {
+          Subscription subscription = iterator.next();
+          if (subscription.listener == listener) {
+            iterator.remove();
+            found = true;
+          }
         }
-      }
-      if (!found) {
-        throw new ListenerNotFoundException();
+        if (!found) {
+          throw new ListenerNotFoundException();
+        }
       }
     }
 
     void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
-      if (!this.connectionNotificationListeners.remove(new Subscription(listener, filter, handback))) {
+      if (!this.listeners.remove(new Subscription(listener, filter, handback))) {
         throw new ListenerNotFoundException();
       }
     }
     
     @Override
     public void connected() {
-      if (connectionNotificationListeners.isEmpty()) {
+      if (listeners.isEmpty()) {
         return;
       }
       
@@ -251,7 +256,7 @@ final class JmxHttpConnector implements JMXConnector {
     
     @Override
     public void closed() {
-      if (connectionNotificationListeners.isEmpty()) {
+      if (listeners.isEmpty()) {
         return;
       }
       
@@ -268,7 +273,7 @@ final class JmxHttpConnector implements JMXConnector {
 
     @Override
     public void exceptionOccurred(Exception exception) {
-      if (connectionNotificationListeners.isEmpty()) {
+      if (listeners.isEmpty()) {
         return;
       }
       
@@ -284,12 +289,14 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
     private void sendNotification(JMXConnectionNotification notification) {
-      for (Subscription subscription : connectionNotificationListeners) {
-        NotificationFilter filter = subscription.filter;
-        if (filter != null && !filter.isNotificationEnabled(notification)) {
-          continue;
+      synchronized (this.listeners) {
+        for (Subscription subscription : listeners) {
+          NotificationFilter filter = subscription.filter;
+          if (filter != null && !filter.isNotificationEnabled(notification)) {
+            continue;
+          }
+          subscription.listener.handleNotification(notification, subscription.handback);
         }
-        subscription.listener.handleNotification(notification, subscription.handback);
       }
     }
     

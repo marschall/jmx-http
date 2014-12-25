@@ -8,6 +8,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Optional;
 import java.util.Set;
 
@@ -51,13 +52,13 @@ import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 
 final class JmxHttpConnection implements MBeanServerConnection {
   
-  private final HttpURLConnection urlConnection;
+  private final URL url;
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
   private final Notifier notifier;
   
-  protected JmxHttpConnection(HttpURLConnection urlConnection, Optional<String> credentials, Notifier notifier) {
-    this.urlConnection = urlConnection;
+  protected JmxHttpConnection(URL url, Optional<String> credentials, Notifier notifier) {
+    this.url = url;
     this.credentials = credentials;
     this.classLoader = this.getClass().getClassLoader();
     this.notifier = notifier;
@@ -189,41 +190,42 @@ final class JmxHttpConnection implements MBeanServerConnection {
   }
   
   private <R> R sendProtected(Command<R> command) throws IOException {
-    urlConnection.setDoOutput(true);
-    urlConnection.setChunkedStreamingMode(0);
-    urlConnection.setRequestMethod("POST");
-    if (credentials.isPresent()) {
-      urlConnection.setRequestProperty ("Authorization", credentials.get());
-    }
-//    urlConnection.setRequestProperty("Connection", "keep-alive");
-    try (OutputStream out = urlConnection.getOutputStream();
-        ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
-      stream.writeObject(command);
-    }
-    
-    int status = urlConnection.getResponseCode();
-    if (status == 100) {
-      try (InputStream in = urlConnection.getInputStream();
-          ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
-        Object result;
-        try {
-          result = stream.readObject();
-        } catch (ClassNotFoundException e) {
-          // REVIEW will trigger listeners probably ok
-          throw new IOException("class not found", e);
-        }
-        if (result instanceof Exception) {
-          // REVIEW will trigger listeners, not sure if intended
-          throw new IOException("exception occurred on server", (Exception) result);
-//          throw (Exception) result;
-        } else {
-          return (R) result;
-        }
+    HttpURLConnection urlConnection = this.openConnection();
+    try {
+      if (credentials.isPresent()) {
+        urlConnection.setRequestProperty("Authorization", credentials.get());
       }
-    } else {
-      
+      //    urlConnection.setRequestProperty("Connection", "keep-alive");
+      try (OutputStream out = urlConnection.getOutputStream();
+          ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
+        stream.writeObject(command);
+      }
+
+      int status = urlConnection.getResponseCode();
+      if (status == 200) {
+        try (InputStream in = urlConnection.getInputStream();
+            ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
+          Object result;
+          try {
+            result = stream.readObject();
+          } catch (ClassNotFoundException e) {
+            // REVIEW will trigger listeners probably ok
+            throw new IOException("class not found", e);
+          }
+          if (result instanceof Exception) {
+            // REVIEW will trigger listeners, not sure if intended
+            throw new IOException("exception occurred on server", (Exception) result);
+            //          throw (Exception) result;
+          } else {
+            return (R) result;
+          }
+        }
+      } else {
+        throw new IOException("http request failed with status: " + status);
+      }
+    } finally {
+      urlConnection.disconnect();
     }
-    return null;
   }
   
   private synchronized <R> R send(Command<R> command) throws IOException {
@@ -235,8 +237,14 @@ final class JmxHttpConnection implements MBeanServerConnection {
     }
   }
 
-  void close() {
-    this.urlConnection.disconnect();
+
+  private HttpURLConnection openConnection() throws IOException {
+    // can only be set once
+    HttpURLConnection urlConnection = (HttpURLConnection) this.url.openConnection();
+    urlConnection.setDoOutput(true);
+    urlConnection.setChunkedStreamingMode(0);
+    urlConnection.setRequestMethod("POST");
+    return urlConnection;
   }
 
 }

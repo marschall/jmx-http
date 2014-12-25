@@ -3,7 +3,6 @@ package com.github.marschall.jmxhttp.client.urlconnection;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;

@@ -3,7 +3,6 @@ package com.github.marschall.jmxhttp.client.urlconnection;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.AccessControlContext;
 import java.security.AccessController;
@@ -80,14 +79,13 @@ final class JmxHttpConnector implements JMXConnector {
       
       this.state = State.CONNECTED;
       Optional<String> credentials = extractCredentials(env);
-      this.mBeanServerConnection = new JmxHttpConnection((HttpURLConnection) this.url.openConnection(), credentials, this.notifier);
+      this.mBeanServerConnection = new JmxHttpConnection(this.url, credentials, this.notifier);
       this.notifier.connected();
     } finally {
       this.sateLock.unlock();
     }
 
   }
-
   private static Optional<String> extractCredentials(Map<String, ?> env) {
     if (env == null) {
       return Optional.empty();
@@ -122,10 +120,7 @@ final class JmxHttpConnector implements JMXConnector {
       if (this.state == State.CLOSED) {
         return;
       }
-      this.state = State.CLOSED;
-      if (this.mBeanServerConnection != null) {
-        this.mBeanServerConnection.close();
-      }
+      this.mBeanServerConnection = null;
       this.notifier.closed();
     } finally {
       this.sateLock.unlock();

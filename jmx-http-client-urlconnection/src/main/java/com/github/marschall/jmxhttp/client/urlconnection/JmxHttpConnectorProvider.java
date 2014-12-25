@@ -1,7 +1,6 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
 

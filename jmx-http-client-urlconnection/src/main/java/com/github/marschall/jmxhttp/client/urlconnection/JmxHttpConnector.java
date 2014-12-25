@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -31,6 +30,10 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
 
+/**
+ * The connector creates {@link MBeanServerConnection}s and manages
+ * connection {@link NotificationListener}s.
+ */
 final class JmxHttpConnector implements JMXConnector {
   
   enum State {
@@ -210,7 +213,9 @@ final class JmxHttpConnector implements JMXConnector {
     }
     
     void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
-      this.listeners.add(new Subscription(listener, filter, handback));
+      synchronized (this.listeners) {
+        this.listeners.add(new Subscription(listener, filter, handback));
+      }
     }
 
     void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
@@ -232,14 +237,16 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
     void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
-      if (!this.listeners.remove(new Subscription(listener, filter, handback))) {
-        throw new ListenerNotFoundException();
+      synchronized (this.listeners) {
+        if (!this.listeners.remove(new Subscription(listener, filter, handback))) {
+          throw new ListenerNotFoundException();
+        }
       }
     }
     
     @Override
     public void connected() {
-      if (listeners.isEmpty()) {
+      if (this.listeners.isEmpty()) {
         return;
       }
       
@@ -256,7 +263,7 @@ final class JmxHttpConnector implements JMXConnector {
     
     @Override
     public void closed() {
-      if (listeners.isEmpty()) {
+      if (this.listeners.isEmpty()) {
         return;
       }
       
@@ -273,7 +280,7 @@ final class JmxHttpConnector implements JMXConnector {
 
     @Override
     public void exceptionOccurred(Exception exception) {
-      if (listeners.isEmpty()) {
+      if (this.listeners.isEmpty()) {
         return;
       }
       
@@ -290,7 +297,7 @@ final class JmxHttpConnector implements JMXConnector {
 
     private void sendNotification(JMXConnectionNotification notification) {
       synchronized (this.listeners) {
-        for (Subscription subscription : listeners) {
+        for (Subscription subscription : this.listeners) {
           NotificationFilter filter = subscription.filter;
           if (filter != null && !filter.isNotificationEnabled(notification)) {
             continue;

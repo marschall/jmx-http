@@ -9,6 +9,14 @@ import javax.management.remote.JMXConnectorProvider;
 import javax.management.remote.JMXProviderException;
 import javax.management.remote.JMXServiceURL;
 
+/**
+ * Connector provider for running JMX over HTTP.
+ * <p>
+ * This provider supports both {@code http} and {@code https} URLs.
+ * Service urls must look like this: 
+ * <a href="service:jmx:http://localhost:8080/jmx-http">service:jmx:http://localhost:8080/jmx-http</a>
+ *
+ */
 public class JmxHttpConnectorProvider implements JMXConnectorProvider {
 
   @Override

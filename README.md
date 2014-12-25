@@ -1,27 +1,40 @@
 JMX-HTTP Connector
 ==================
 
-A JMX connector (client and server) that runs JMX through HTTP.
+A JMX connector (client and server) that runs JMX through HTTP (or HTTPS).
 
+### Why?
 
-Why
----
+This connector is intended to be used in cases where you'll already have an HTTP port open. This gives it the following advantages:
 
- * punches through any firewall
- * no additional port
- * lightweight (not tunneled through SOAP)
+ * HTTP punches through any firewall. In general .
+ * An existing port can be used.
+ * HTTP is already supported by a lot of network infrastructure.
+ * This connector is quite lightweight:
+  * The protocol runs plain Java Serialization over HTTP, not XML or even SOAP.
+  * No dependencies other than servlet API and Java SE
+   * The server server is 20 kb.
+   * The client client is 35 kb.
 
+### Why don't you use WebSockets?
 
-What about servlet logging?
+A lot of network infrastructure does not (yet) support WebSockets. Using WebSockets would therefore negate the goal of punches through firewalls.
 
-Uses java.util.logging configure your server accordingly.
+### What about security?
 
-Why no optimization?
+Per default no security is applied. You can either you your existing networking configuration to secure access or build a new WAR with servlet security. The WAR project contains only the `web.xml` so this is easy.
+The client supports HTTP Basic authentication.
 
-HTTP headers are huge.
+### Why is there no optimization applied to the protocol?
 
-Why no WebSockets?
+As HTTP headers are huge and added for every request and optimization is the form of a custom serialized form or compression is unlikely to result in noticeable improvements.
 
-A lot of snake oil network infrastructure does not (yet) support WebSockets.
+### What about servlet logging?
 
+The servlet uses `java.util.logging` configure your server accordingly.
+
+Protocol Details
+----------------
+
+The client serializes each request as a command object and POSTs it to a servlet. The servlet deserializes the command and executes it. Afterwards the result is serialized and sent back to the client.
 

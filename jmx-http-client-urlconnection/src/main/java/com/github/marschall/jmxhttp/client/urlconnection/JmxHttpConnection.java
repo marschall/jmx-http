@@ -50,6 +50,10 @@ import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 
+/**
+ * The actual client to server connection happens where, delegates to
+ * {@link HttpURLConnection}.
+ */
 final class JmxHttpConnection implements MBeanServerConnection {
   
   private final URL url;
@@ -150,33 +154,33 @@ final class JmxHttpConnection implements MBeanServerConnection {
   }
 
   @Override
-  public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
+//    send(new AddNotificationListener(name, listener, filter, handback));
   }
 
   @Override
-  public void addNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void addNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
+//    send(new AddNotificationListener(name, listener, filter, handback));
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, ObjectName listener) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void removeNotificationListener(ObjectName name, ObjectName listener) throws IOException {
+//    send(new RemoveNotificationListener(name, listener));
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void removeNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
+//    send(new RemoveNotificationListener(name, listener, filter, handback));
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException {
+//    send(new RemoveNotificationListener(name, listener));
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) {
-    throw new UnsupportedOperationException("notification listeners aren't supported");
+  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
+//    send(new RemoveNotificationListener(name, listener, filter, handback));
   }
 
   @Override

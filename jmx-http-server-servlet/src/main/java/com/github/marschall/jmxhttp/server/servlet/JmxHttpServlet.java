@@ -1,4 +1,4 @@
-package com.github.marschall.jmxhttp.server.war;
+package com.github.marschall.jmxhttp.server.servlet;
 
 import java.io.IOException;
 import java.io.InputStream;

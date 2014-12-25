@@ -7,7 +7,7 @@
   
   <servlet>
     <servlet-name>jmx-http-servlet</servlet-name>
-    <servlet-class>com.github.marschall.jmxhttp.server.war.JmxHttpServlet</servlet-class>
+    <servlet-class>com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet</servlet-class>
   </servlet>
   
   <servlet-mapping>

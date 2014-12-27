@@ -31,6 +31,7 @@ import javax.management.ObjectName;
 import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
+import com.github.marschall.jmxhttp.common.command.AddNotificationListener;
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.CreateMBean;
@@ -46,6 +47,7 @@ import com.github.marschall.jmxhttp.common.command.IsInstanceOf;
 import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
+import com.github.marschall.jmxhttp.common.command.RemoveNotificationListener;
 import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
@@ -160,17 +162,17 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void addNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
-//    send(new AddNotificationListener(name, listener, filter, handback));
+    send(new AddNotificationListener(name, listener, filter, handback));
   }
 
   @Override
   public void removeNotificationListener(ObjectName name, ObjectName listener) throws IOException {
-//    send(new RemoveNotificationListener(name, listener));
+    send(new RemoveNotificationListener(name, listener));
   }
 
   @Override
   public void removeNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
-//    send(new RemoveNotificationListener(name, listener, filter, handback));
+    send(new RemoveNotificationListener(name, listener, filter, handback));
   }
 
   @Override

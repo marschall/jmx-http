@@ -11,7 +11,6 @@ import javax.management.ObjectName;
 public final class RemoveNotificationListener implements Command<Void> {
 
   private final ObjectName name;
-  private final NotificationListener listener;
   private final ObjectName listenerName;
   private final NotificationFilter filter;
   private final Object handback;
@@ -19,18 +18,7 @@ public final class RemoveNotificationListener implements Command<Void> {
 
   public RemoveNotificationListener(ObjectName name, ObjectName listener) {
     this.name = name;
-    this.listener = null;
     this.listenerName = listener;
-    this.filter = null;
-    this.handback = null;
-
-    this.hasArguments = false;
-  }
-
-  public RemoveNotificationListener(ObjectName name, NotificationListener listener) {
-    this.name = name;
-    this.listener = listener;
-    this.listenerName = null;
     this.filter = null;
     this.handback = null;
 
@@ -39,18 +27,7 @@ public final class RemoveNotificationListener implements Command<Void> {
 
   public RemoveNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) {
     this.name = name;
-    this.listener = null;
     this.listenerName = listener;
-    this.filter = filter;
-    this.handback = handback;
-
-    this.hasArguments = true;
-  }
-
-  public RemoveNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) {
-    this.name = name;
-    this.listener = listener;
-    this.listenerName = null;
     this.filter = filter;
     this.handback = handback;
 
@@ -59,18 +36,10 @@ public final class RemoveNotificationListener implements Command<Void> {
 
   @Override
   public Void execute(MBeanServerConnection connection) throws JMException, IOException {
-    if (this.listener != null) {
-      if (this.hasArguments) {
-        connection.removeNotificationListener(name, listener, filter, this.handback);
-      } else {
-        connection.removeNotificationListener(name, listener);
-      }
+    if (this.hasArguments) {
+      connection.removeNotificationListener(this.name, this.listenerName, this.filter, this.handback);
     } else {
-      if (this.hasArguments) {
-        connection.removeNotificationListener(name, listenerName, filter, this.handback);
-      } else {
-        connection.removeNotificationListener(name, listenerName);
-      }
+      connection.removeNotificationListener(this.name, this.listenerName);
     }
     return null;
   }

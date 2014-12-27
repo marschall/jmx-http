@@ -25,6 +25,7 @@ import javax.management.MBeanInfo;
 import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServerConnection;
 import javax.management.NotCompliantMBeanException;
+import javax.management.Notification;
 import javax.management.NotificationFilter;
 import javax.management.NotificationListener;
 import javax.management.ObjectInstance;
@@ -160,8 +161,8 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
-    Long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
-    mapListener(listener, listenerId);
+    long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
+    mapListener(listener, listenerId, handback);
   }
 
   @Override
@@ -258,8 +259,12 @@ final class JmxHttpConnection implements MBeanServerConnection {
     urlConnection.setRequestMethod("POST");
     return urlConnection;
   }
+  
+  private void sendNotification(Notification notification, long listenerId) {
+    
+  }
 
-  private void mapListener(NotificationListener listener, Long listenerId) {
+  private void mapListener(NotificationListener listener, long listenerId, Object handback) {
     // TODO Auto-generated method stub
     
   }

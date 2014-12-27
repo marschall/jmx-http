@@ -18,7 +18,7 @@ public final class QueryNames implements Command<Set<ObjectName>> {
   }
 
   @Override
-  public Set<ObjectName> execute(MBeanServerConnection connection) throws IOException {
+  public Set<ObjectName> execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws IOException {
     return connection.queryNames(name, query);
   }
 

@@ -17,7 +17,7 @@ public final class IsInstanceOf implements Command<Boolean> {
   }
 
   @Override
-  public Boolean execute(MBeanServerConnection connection) throws InstanceNotFoundException, IOException {
+  public Boolean execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws InstanceNotFoundException, IOException {
     return connection.isInstanceOf(name, className);
   }
   

@@ -14,7 +14,7 @@ public final class IsRegistered implements Command<Boolean> {
   }
 
   @Override
-  public Boolean execute(MBeanServerConnection connection) throws IOException {
+  public Boolean execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws IOException {
     return connection.isRegistered(name);
   }
   

@@ -19,7 +19,7 @@ public final class QueryMBeans implements Command<Set<ObjectInstance>> {
   }
 
   @Override
-  public Set<ObjectInstance> execute(MBeanServerConnection connection) throws IOException {
+  public Set<ObjectInstance> execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws IOException {
     return connection.queryMBeans(name, query);
   }
 

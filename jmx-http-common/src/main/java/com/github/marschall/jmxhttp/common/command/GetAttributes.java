@@ -7,7 +7,7 @@ import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 
-public class GetAttributes implements Command<AttributeList> {
+public final class GetAttributes implements Command<AttributeList> {
   
   private final ObjectName name;
   private final String[] attributes;
@@ -18,7 +18,7 @@ public class GetAttributes implements Command<AttributeList> {
   }
 
   @Override
-  public AttributeList execute(MBeanServerConnection connection) throws JMException, IOException {
+  public AttributeList execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.getAttributes(name, attributes);
   }
 

@@ -7,7 +7,7 @@ import javax.management.MBeanServerConnection;
 public final class GetDefaultDomain implements Command<String> {
 
   @Override
-  public String execute(MBeanServerConnection connection) throws IOException {
+  public String execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws IOException {
     return connection.getDefaultDomain();
   }
 

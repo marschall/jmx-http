@@ -6,9 +6,9 @@
   <display-name>JMX-HTTP Bridge</display-name>
   
   <servlet>
-    <async-supported>true</async-supported>
     <servlet-name>jmx-http-servlet</servlet-name>
     <servlet-class>com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet</servlet-class>
+    <async-supported>true</async-supported>
   </servlet>
   
   <servlet-mapping>

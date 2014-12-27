@@ -16,7 +16,7 @@ public final class GetObjectInstance implements Command<ObjectInstance> {
   }
 
   @Override
-  public ObjectInstance execute(MBeanServerConnection connection) throws JMException, IOException {
+  public ObjectInstance execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.getObjectInstance(name);
   }
 

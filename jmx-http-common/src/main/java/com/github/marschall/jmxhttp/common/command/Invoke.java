@@ -6,7 +6,7 @@ import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 
-public class Invoke implements Command<Object> {
+public final class Invoke implements Command<Object> {
 
   private final ObjectName name;
   private final String operationName;
@@ -22,7 +22,7 @@ public class Invoke implements Command<Object> {
   }
 
   @Override
-  public Object execute(MBeanServerConnection connection) throws JMException, IOException {
+  public Object execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.invoke(name, operationName, params, signature);
   }
 

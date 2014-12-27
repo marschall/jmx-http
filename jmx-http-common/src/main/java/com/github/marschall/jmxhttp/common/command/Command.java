@@ -14,6 +14,6 @@ import javax.management.MBeanServerConnection;
  */
 public interface Command<R> extends Serializable {
 
-  R execute(MBeanServerConnection connection) throws JMException, IOException;
+  R execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException;
   
 }

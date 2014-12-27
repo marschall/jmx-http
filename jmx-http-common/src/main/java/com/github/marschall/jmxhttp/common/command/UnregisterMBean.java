@@ -15,7 +15,7 @@ public final class UnregisterMBean implements Command<Void> {
   }
 
   @Override
-  public Void execute(MBeanServerConnection connection) throws JMException, IOException {
+  public Void execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     connection.unregisterMBean(name);
     return null;
   }

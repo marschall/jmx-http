@@ -7,7 +7,7 @@ import javax.management.MBeanServerConnection;
 public final class GetDomains implements Command<String[]> {
 
   @Override
-  public String[] execute(MBeanServerConnection connection) throws IOException {
+  public String[] execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws IOException {
     return connection.getDomains();
   }
 

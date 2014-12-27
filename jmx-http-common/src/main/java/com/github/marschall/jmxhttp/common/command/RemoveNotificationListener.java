@@ -5,7 +5,6 @@ import java.io.IOException;
 import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.NotificationFilter;
-import javax.management.NotificationListener;
 import javax.management.ObjectName;
 
 public final class RemoveNotificationListener implements Command<Void> {
@@ -35,7 +34,7 @@ public final class RemoveNotificationListener implements Command<Void> {
   }
 
   @Override
-  public Void execute(MBeanServerConnection connection) throws JMException, IOException {
+  public Void execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     if (this.hasArguments) {
       connection.removeNotificationListener(this.name, this.listenerName, this.filter, this.handback);
     } else {

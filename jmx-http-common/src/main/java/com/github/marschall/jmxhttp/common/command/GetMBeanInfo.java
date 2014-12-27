@@ -16,7 +16,7 @@ public final class GetMBeanInfo implements Command<MBeanInfo> {
   }
 
   @Override
-  public MBeanInfo execute(MBeanServerConnection connection) throws JMException, IOException {
+  public MBeanInfo execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.getMBeanInfo(name);
   }
 

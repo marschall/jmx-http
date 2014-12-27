@@ -19,7 +19,7 @@ public final class SetAttributes implements Command<AttributeList> {
 
 
   @Override
-  public AttributeList execute(MBeanServerConnection connection) throws JMException, IOException {
+  public AttributeList execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.setAttributes(name, attributes);
   }
 

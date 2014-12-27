@@ -7,7 +7,7 @@ import javax.management.MBeanServerConnection;
 import javax.management.ObjectInstance;
 import javax.management.ObjectName;
 
-public class CreateMBean implements Command<ObjectInstance> {
+public final class CreateMBean implements Command<ObjectInstance> {
 
   private final String className;
   private final ObjectName name;
@@ -24,7 +24,7 @@ public class CreateMBean implements Command<ObjectInstance> {
   }
 
   @Override
-  public ObjectInstance execute(MBeanServerConnection connection) throws JMException, IOException {
+  public ObjectInstance execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.createMBean(className, name, loaderName, params, signature);
   }
 

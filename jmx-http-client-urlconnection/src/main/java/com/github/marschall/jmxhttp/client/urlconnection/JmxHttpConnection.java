@@ -19,6 +19,7 @@ import javax.management.InstanceAlreadyExistsException;
 import javax.management.InstanceNotFoundException;
 import javax.management.IntrospectionException;
 import javax.management.InvalidAttributeValueException;
+import javax.management.ListenerNotFoundException;
 import javax.management.MBeanException;
 import javax.management.MBeanInfo;
 import javax.management.MBeanRegistrationException;
@@ -32,6 +33,7 @@ import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
 import com.github.marschall.jmxhttp.common.command.AddNotificationListener;
+import com.github.marschall.jmxhttp.common.command.AddNotificationListenerRemote;
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.CreateMBean;
@@ -48,6 +50,7 @@ import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
 import com.github.marschall.jmxhttp.common.command.RemoveNotificationListener;
+import com.github.marschall.jmxhttp.common.command.RemoveNotificationListenerRemote;
 import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
@@ -157,7 +160,8 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
-//    send(new AddNotificationListener(name, listener, filter, handback));
+    Long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
+    mapListener(listener, listenerId);
   }
 
   @Override
@@ -176,13 +180,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException {
-//    send(new RemoveNotificationListener(name, listener));
+  public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException, ListenerNotFoundException {
+    long listenerId = getListenerId(listener);
+    send(new RemoveNotificationListenerRemote(name, listenerId));
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
-//    send(new RemoveNotificationListener(name, listener, filter, handback));
+  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException, ListenerNotFoundException {
+    long listenerId = getListenerId(listener);
+    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handback));
   }
 
   @Override
@@ -242,7 +248,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
       throw e;
     }
   }
-
+  
 
   private HttpURLConnection openConnection() throws IOException {
     // can only be set once
@@ -251,6 +257,13 @@ final class JmxHttpConnection implements MBeanServerConnection {
     urlConnection.setChunkedStreamingMode(0);
     urlConnection.setRequestMethod("POST");
     return urlConnection;
+  }
+
+  private void mapListener(NotificationListener listener, Long listenerId) {
+    // TODO Auto-generated method stub
+    
+  }
+  private long getListenerId(NotificationListener listener) throws ListenerNotFoundException {
   }
 
 }

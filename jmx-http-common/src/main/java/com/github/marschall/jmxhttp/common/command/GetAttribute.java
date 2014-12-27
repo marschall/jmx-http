@@ -17,7 +17,7 @@ public final class GetAttribute implements Command<Object> {
   }
 
   @Override
-  public Object execute(MBeanServerConnection connection) throws JMException, IOException {
+  public Object execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
     return connection.getAttribute(name, attribute);
   }
 

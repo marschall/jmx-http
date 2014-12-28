@@ -8,22 +8,20 @@ import javax.management.NotificationFilter;
 import javax.management.ObjectName;
 
 public final class AddNotificationListenerRemote implements Command<Long> {
-  
+
   private final ObjectName name;
   private final NotificationFilter filter;
-  private final Object handback;
+  private final Long handbackId;
 
-  public AddNotificationListenerRemote(ObjectName name, NotificationFilter filter, Object handback) {
+  public AddNotificationListenerRemote(ObjectName name, NotificationFilter filter, Long handbackId) {
     this.name = name;
     this.filter = filter;
-    this.handback = handback;
+    this.handbackId = handbackId;
   }
-
-
 
   @Override
   public Long execute(MBeanServerConnection connection, NotificationRegistry notificationRegistry) throws JMException, IOException {
-    return notificationRegistry.addNotificationListener(this.name, this.filter, this.handback);
+    return notificationRegistry.addNotificationListener(this.name, this.filter, this.handbackId);
   }
 
 }

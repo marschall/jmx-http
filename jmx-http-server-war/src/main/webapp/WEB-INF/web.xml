@@ -8,6 +8,16 @@
   <servlet>
     <servlet-name>jmx-http-servlet</servlet-name>
     <servlet-class>com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet</servlet-class>
+    <init-param>
+      <description>
+        Number of seconds a long-poll connection will live.
+        Can be decreased if you network infrastructure does terminate hanging connections earlier.
+        Can be increased if you network infrastructure does not terminate hanging connections.
+        Optional, default is 30.
+      </description>
+      <param-name>poll-timeout-seconds</param-name>
+      <param-value>30</param-value>
+    </init-param>
     <async-supported>true</async-supported>
   </servlet>
   

@@ -3,6 +3,7 @@ package com.github.marschall.jmxhttp.client.urlconnection;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
 import java.net.URL;
 import java.security.AccessControlContext;
 import java.security.AccessController;
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.management.ListenerNotFoundException;
 import javax.management.MBeanServerConnection;
@@ -35,6 +38,8 @@ import javax.security.auth.Subject;
  * connection {@link NotificationListener}s.
  */
 final class JmxHttpConnector implements JMXConnector {
+
+  private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
   
   enum State {
     INITIAL,
@@ -296,13 +301,19 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
     private void sendNotification(JMXConnectionNotification notification) {
+      // TODO move to custom thread
       synchronized (this.listeners) {
         for (Subscription subscription : this.listeners) {
           NotificationFilter filter = subscription.filter;
           if (filter != null && !filter.isNotificationEnabled(notification)) {
             continue;
           }
-          subscription.listener.handleNotification(notification, subscription.handback);
+          try {
+            subscription.listener.handleNotification(notification, subscription.handback);
+          } catch (RuntimeException e) {
+            // make sure even is delivered to all listeners
+            LOG.log(Level.WARNING, "exception occrred while delivering event to listener", e);
+          }
         }
       }
     }

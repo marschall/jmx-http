@@ -161,6 +161,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
+    System.out.println("addNotificationListener(name=" + name + ", handback=" + handback);
     long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
     mapListener(listener, listenerId, handback);
   }
@@ -262,6 +263,18 @@ final class JmxHttpConnection implements MBeanServerConnection {
   
   private void sendNotification(Notification notification, long listenerId) {
     
+  }
+  
+  private Long registerHandback(Object handback) {
+    if (handback == null) {
+      return null;
+    }
+  }
+  
+  private Object getHandback(Long handbackId) {
+    if (handbackId == null) {
+      return null;
+    }
   }
 
   private void mapListener(NotificationListener listener, long listenerId, Object handback) {

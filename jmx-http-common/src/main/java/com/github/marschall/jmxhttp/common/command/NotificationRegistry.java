@@ -7,10 +7,10 @@ import javax.management.ObjectName;
 
 public interface NotificationRegistry {
 
-  long addNotificationListener(ObjectName name, NotificationFilter filter, Object handback) throws IOException;
+  long addNotificationListener(ObjectName name, NotificationFilter filter, Long handbackId) throws IOException;
   
-  void removeNotificationListener(ObjectName name, long listener) throws IOException;
+  void removeNotificationListener(ObjectName name, long listenerId) throws IOException;
 
-  void removeNotificationListener(ObjectName name, long listener, NotificationFilter filter, Object handback) throws IOException;
+  void removeNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long objectId) throws IOException;
   
 }

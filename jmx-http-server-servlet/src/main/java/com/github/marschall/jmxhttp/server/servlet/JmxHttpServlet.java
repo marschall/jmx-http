@@ -207,23 +207,6 @@ public class JmxHttpServlet extends HttpServlet {
     return correlationId;
   }
 
-  private static long getCorrelationId(ServletRequest request) throws IOException {
-    String correlationIdParameter = request.getParameter(PARAMETER_CORRELATION_ID);
-    long correlationId;
-    if (correlationIdParameter != null) {
-      try {
-        correlationId = Long.parseLong(correlationIdParameter);
-      } catch (NumberFormatException e) {
-        LOG.log(Level.SEVERE, "parameter '" + PARAMETER_CORRELATION_ID + "' not numeric");
-        return NO_CORRELATION_ID;
-      }
-    } else {
-      LOG.log(Level.SEVERE, "parameter '" + PARAMETER_CORRELATION_ID + "' missing");
-      return NO_CORRELATION_ID;
-    }
-    return correlationId;
-  }
-
   private static long generateCorrelationId() {
     return CORRELATION_ID_GENERATOR.incrementAndGet();
   }
@@ -278,13 +261,14 @@ public class JmxHttpServlet extends HttpServlet {
   final class ServletNotificationRegistry implements NotificationRegistry {
 
     @Override
-    public long addNotificationListener(ObjectName name, NotificationFilter filter, Long handbackId) throws IOException {
+    public long addNotificationListener(ObjectName name, NotificationFilter filter, long listenerId, Long handbackId) throws IOException {
       // TODO Auto-generated method stub
       return 0;
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId) throws IOException {
+      
       // TODO Auto-generated method stub
       
     }
@@ -300,9 +284,11 @@ public class JmxHttpServlet extends HttpServlet {
   final class DispatchingNotificationListener implements NotificationListener {
 
     private final AsyncContext asyncContext;
+    private final long correlationId;
 
-    DispatchingNotificationListener(AsyncContext asyncContext) {
+    DispatchingNotificationListener(AsyncContext asyncContext, long correlationId) {
       this.asyncContext = asyncContext;
+      this.correlationId = correlationId;
     }
 
     @Override
@@ -317,14 +303,6 @@ public class JmxHttpServlet extends HttpServlet {
         return;
       }
 
-      ServletRequest suppliedRequest = asyncContext.getRequest();
-      long correlationId;
-      try {
-        correlationId = getCorrelationId(suppliedRequest);
-      } catch (IOException e) {
-        LOG.log(Level.WARNING, "could not extract correlation id", e);
-        return;
-      }
 
       Deque<RemoteNotification> deque = pendingNotifications.get(correlationId);
       if (deque == null) {
@@ -332,8 +310,14 @@ public class JmxHttpServlet extends HttpServlet {
       }
       deque.add(remoteNotification);
 
+      // FIXME can't reference asyncContext
+      ServletRequest suppliedRequest = asyncContext.getRequest();
       suppliedRequest.setAttribute(DISPATCH, true);
-      asyncContext.dispatch();
+      try {
+        asyncContext.dispatch();
+      } catch (IllegalStateException e) {
+        LOG.log(Level.WARNING, "already dispatched", e);
+      }
     }
 
   }

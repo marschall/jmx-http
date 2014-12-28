@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.lang.invoke.MethodHandles;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,13 +57,69 @@ public class JmxHttpServlet extends HttpServlet {
   private static final long NO_CORRELATION_ID = -1L;
 
   private static final AtomicLong CORRELATION_ID_GENERATOR = new AtomicLong();
-  
+
   private static final AsyncListener DISPATCH_ON_TIMEOUT = new DispatchOnTimeout(); 
 
   private volatile MBeanServer server;
   private volatile ClassLoader classLoader;
 
-  private final ConcurrentMap<Long, Deque<RemoteNotification>> pendingNotifications = new ConcurrentHashMap<>();
+  private final ConcurrentMap<Long, Correlation> correlations = new ConcurrentHashMap<>();
+
+  static final class Correlation {
+
+    private Deque<RemoteNotification> pendingNotifications;
+
+    private AsyncContext asyncContext;
+
+    final NotificationRegistry registry;
+
+    Correlation(NotificationRegistry registry) {
+      this.registry = registry;
+    }
+
+    synchronized AsyncContext getAsyncContext() {
+      return asyncContext;
+    }
+
+    synchronized void setAsyncContext(AsyncContext asyncContext) {
+      this.asyncContext = asyncContext;
+    }
+
+    synchronized List<RemoteNotification> drainPendingNotifications() {
+      if (this.pendingNotifications == null) {
+        return Collections.emptyList();
+      }
+      List<RemoteNotification> result = new ArrayList<>(pendingNotifications.size());
+      RemoteNotification notification = pendingNotifications.pollFirst();
+      while (notification != null) {
+        result.add(notification);
+        notification = pendingNotifications.pollFirst();
+      }
+      return result;
+    }
+
+    synchronized void dispatch() {
+      if (this.asyncContext == null) {
+        LOG.log(Level.WARNING, "not dispatching no async context");
+        return;
+      }
+
+      ServletRequest suppliedRequest = this.asyncContext.getRequest();
+      suppliedRequest.setAttribute(DISPATCH, true);
+      try {
+        asyncContext.dispatch();
+      } catch (IllegalStateException e) {
+        LOG.log(Level.WARNING, "already dispatched", e);
+      }
+    }
+
+    synchronized void addNotification(RemoteNotification notification) {
+      if (this.pendingNotifications == null) {
+        this.pendingNotifications = new ConcurrentLinkedDeque<>();
+      }
+      this.pendingNotifications.push(notification);
+    }
+  }
 
   @Override
   public void init(ServletConfig config) throws ServletException {
@@ -79,7 +136,7 @@ public class JmxHttpServlet extends HttpServlet {
   @Override
   public void destroy() {
     // TODO remove listeners
-    this.pendingNotifications.clear();
+    this.correlations.clear();
     super.destroy();
   }
 
@@ -100,6 +157,11 @@ public class JmxHttpServlet extends HttpServlet {
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 
+    Correlation correlation = getCorrelation(request, response);
+    if (correlation == null) {
+      return;
+    }
+
     Command<?> command;
 
     try (InputStream in = request.getInputStream();
@@ -117,7 +179,7 @@ public class JmxHttpServlet extends HttpServlet {
 
     Object result;
     try {
-      result = command.execute(this.server, null);
+      result = command.execute(this.server, correlation.registry);
     } catch (JMException | IOException e) {
       LOG.log(Level.WARNING, "exception while executing operation", e);
       result = e;
@@ -153,25 +215,28 @@ public class JmxHttpServlet extends HttpServlet {
   }
 
   private void handleListen(HttpServletRequest request, HttpServletResponse response) throws IOException {
-    long correlationId = getCorrelationId(request, response);
-    if (correlationId == NO_CORRELATION_ID) {
+    Correlation correlation = this.getCorrelation(request, response);
+    if (correlation == null) {
       return;
     }
-
     if (request.getAttribute(DISPATCH) != null) {
       response.setContentType("text/plain");
       response.setCharacterEncoding("UTF-8");
 
-      Deque<RemoteNotification> deque = this.pendingNotifications.get(correlationId);
-      List<RemoteNotification> notifications = new ArrayList<>(deque.size());
-      RemoteNotification notification = deque.pollFirst();
-      while (notification != null) {
-        notifications.add(notification);
-        notification = deque.pollFirst();
-      }
+      correlation.setAsyncContext(null);
+      List<RemoteNotification> notifications = correlation.drainPendingNotifications();
       sendObject(response, notifications);
     } else {
+      List<RemoteNotification> notifications = correlation.drainPendingNotifications();
+      if (!notifications.isEmpty()) {
+        // we have pending notifications, send them directly instead of starting a long poll
+        sendObject(response, notifications);
+        return;
+      }
+
+
       AsyncContext asyncContext = request.startAsync(request, response);
+      correlation.setAsyncContext(asyncContext);
       asyncContext.setTimeout(SECONDS.toMillis(30L));
       asyncContext.addListener(DISPATCH_ON_TIMEOUT);
     }
@@ -180,7 +245,15 @@ public class JmxHttpServlet extends HttpServlet {
   private void handleRegister(HttpServletResponse response) throws IOException {
     response.setContentType("text/plain");
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write(Long.toString(generateCorrelationId()));
+    long correlationId = generateCorrelationId();
+    NotificationRegistry registry = new ServletNotificationRegistry(correlationId);
+    Correlation previous = this.correlations.putIfAbsent(correlationId, new Correlation(registry));
+    if (previous != null) {
+      LOG.log(Level.WARNING, "correlation: " + correlationId + " already registered");
+      // TODO notify client
+      return;
+    }
+    response.getWriter().write(Long.toString(correlationId));
   }
 
   private void handleUnregister(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -188,6 +261,7 @@ public class JmxHttpServlet extends HttpServlet {
     if (correlationId == NO_CORRELATION_ID) {
       return;
     }
+    // FIXME
   }
 
   private static long getCorrelationId(ServletRequest request, HttpServletResponse response) throws IOException {
@@ -205,6 +279,21 @@ public class JmxHttpServlet extends HttpServlet {
       return NO_CORRELATION_ID;
     }
     return correlationId;
+  }
+
+  private Correlation getCorrelation(ServletRequest request, HttpServletResponse response) throws IOException {
+    long correlationId = getCorrelationId(request, response);
+    if (correlationId == NO_CORRELATION_ID) {
+      return null;
+    }
+
+    Correlation correlation = this.correlations.get(correlationId);
+    if (correlation == null) {
+      LOG.log(Level.WARNING, "no correlation found for id: " + correlationId);
+      // TODO send error to client
+      return null;
+    }
+    return correlation;
   }
 
   private static long generateCorrelationId() {
@@ -257,37 +346,66 @@ public class JmxHttpServlet extends HttpServlet {
     public void onComplete(AsyncEvent event) throws IOException {
     }
   }
-  
+
   final class ServletNotificationRegistry implements NotificationRegistry {
 
+    private final long correlationId;
+
+    ServletNotificationRegistry(long correlationId) {
+      this.correlationId = correlationId;
+    }
+
+    private Correlation getCorrelation() {
+      Correlation correlation = correlations.get(this.correlationId);
+      if (correlation == null) {
+        LOG.log(Level.WARNING, "no correlation found for id: " + correlationId);
+      }
+      return correlation;
+    }
+
     @Override
-    public long addNotificationListener(ObjectName name, NotificationFilter filter, long listenerId, Long handbackId) throws IOException {
-      // TODO Auto-generated method stub
-      return 0;
+    public void addNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long handbackId) throws IOException {
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+
+      Handback handback = new Handback(listenerId, handbackId);
+      NotificationListener listener = new DispatchingNotificationListener(correlationId);
+      correlation.registerListener(listenerId, listener);
+      server.addNotificationListener(name, listener, filter, handback);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId) throws IOException {
-      
-      // TODO Auto-generated method stub
-      
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+      NotificationListener listener = correlation.getListener(listenerId);
+      server.removeNotificationListener(name, listener);
+      correlation.removeListener(listenerId, listener);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long objectId) throws IOException {
-      // TODO Auto-generated method stub
-      
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+      NotificationListener listener = correlation.getListener(listenerId);
+      Object handback;
+      server.removeNotificationListener(name, listener, filter, handback);
+      correlation.removeListener(listenerId, listener);
     }
-    
+
   }
 
   final class DispatchingNotificationListener implements NotificationListener {
 
-    private final AsyncContext asyncContext;
     private final long correlationId;
 
-    DispatchingNotificationListener(AsyncContext asyncContext, long correlationId) {
-      this.asyncContext = asyncContext;
+    DispatchingNotificationListener(long correlationId) {
       this.correlationId = correlationId;
     }
 
@@ -304,20 +422,14 @@ public class JmxHttpServlet extends HttpServlet {
       }
 
 
-      Deque<RemoteNotification> deque = pendingNotifications.get(correlationId);
-      if (deque == null) {
-        deque = pendingNotifications.computeIfAbsent(correlationId, (key) -> new ConcurrentLinkedDeque<>());
+      Correlation correlation = correlations.get(this.correlationId);
+      if (correlation == null) {
+        LOG.log(Level.WARNING, "no correlation found for id: " + correlationId);
+        return;
       }
-      deque.add(remoteNotification);
+      correlation.addNotification(remoteNotification);
 
-      // FIXME can't reference asyncContext
-      ServletRequest suppliedRequest = asyncContext.getRequest();
-      suppliedRequest.setAttribute(DISPATCH, true);
-      try {
-        asyncContext.dispatch();
-      } catch (IllegalStateException e) {
-        LOG.log(Level.WARNING, "already dispatched", e);
-      }
+      correlation.dispatch();
     }
 
   }

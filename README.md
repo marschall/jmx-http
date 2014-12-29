@@ -12,9 +12,11 @@ This connector is intended to be used in cases where you'll already have an HTTP
  * HTTP is already supported by a lot of network infrastructure.
  * This connector is quite lightweight:
   * The protocol runs plain Java Serialization over HTTP, not XML or even SOAP.
+  * notifications are done with long poll for maximum compatibility and low latency
+    * for minimal resource use servlet 3 async support is used
   * No dependencies other than servlet API and Java SE
-   * The server server is 20 kb.
-   * The client client is 35 kb.
+   * The server server is XX kb.
+   * The client client is XX kb.
 
 ### Why don't you use WebSockets?
 

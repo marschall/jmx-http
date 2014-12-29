@@ -1,7 +1,7 @@
 package com.github.marschall.jmxhttp.server.servlet;
 
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_LISTEN;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_PARAMETER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
@@ -146,11 +146,11 @@ public class JmxHttpServlet extends HttpServlet {
       sendAsyncSupported(response);
       return;
     }
-    String action = request.getParameter(ACTION_PARAMETER);
+    String action = request.getParameter(PARAMETER_ACTION);
     if (action != null) {
       handleAction(request, response, action);
     } else {
-      sendError(response, "parameter '" + ACTION_PARAMETER + "' missing");
+      sendError(response, "parameter '" + PARAMETER_ACTION + "' missing");
     }
   }
 
@@ -365,38 +365,38 @@ public class JmxHttpServlet extends HttpServlet {
 
     @Override
     public void addNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long handbackId) throws IOException {
-      Correlation correlation = getCorrelation();
-      if (correlation == null) {
-        return;
-      }
-
-      Handback handback = new Handback(listenerId, handbackId);
-      NotificationListener listener = new DispatchingNotificationListener(correlationId);
-      correlation.registerListener(listenerId, listener);
-      server.addNotificationListener(name, listener, filter, handback);
+//      Correlation correlation = getCorrelation();
+//      if (correlation == null) {
+//        return;
+//      }
+//
+//      Handback handback = new Handback(listenerId, handbackId);
+//      NotificationListener listener = new DispatchingNotificationListener(correlationId);
+//      correlation.registerListener(listenerId, listener);
+//      server.addNotificationListener(name, listener, filter, handback);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId) throws IOException {
-      Correlation correlation = getCorrelation();
-      if (correlation == null) {
-        return;
-      }
-      NotificationListener listener = correlation.getListener(listenerId);
-      server.removeNotificationListener(name, listener);
-      correlation.removeListener(listenerId, listener);
+//      Correlation correlation = getCorrelation();
+//      if (correlation == null) {
+//        return;
+//      }
+//      NotificationListener listener = correlation.getListener(listenerId);
+//      server.removeNotificationListener(name, listener);
+//      correlation.removeListener(listenerId, listener);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long objectId) throws IOException {
-      Correlation correlation = getCorrelation();
-      if (correlation == null) {
-        return;
-      }
-      NotificationListener listener = correlation.getListener(listenerId);
-      Object handback;
-      server.removeNotificationListener(name, listener, filter, handback);
-      correlation.removeListener(listenerId, listener);
+//      Correlation correlation = getCorrelation();
+//      if (correlation == null) {
+//        return;
+//      }
+//      NotificationListener listener = correlation.getListener(listenerId);
+//      Object handback;
+//      server.removeNotificationListener(name, listener, filter, handback);
+//      correlation.removeListener(listenerId, listener);
     }
 
   }

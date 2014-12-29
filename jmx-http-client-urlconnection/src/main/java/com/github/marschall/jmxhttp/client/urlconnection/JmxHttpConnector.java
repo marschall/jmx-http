@@ -2,9 +2,17 @@ package com.github.marschall.jmxhttp.client.urlconnection;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
 import java.lang.invoke.MethodHandles;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
@@ -33,6 +41,15 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
 
+import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
+
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_LISTEN;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 /**
  * The connector creates {@link MBeanServerConnection}s and manages
  * connection {@link NotificationListener}s.
@@ -40,27 +57,27 @@ import javax.security.auth.Subject;
 final class JmxHttpConnector implements JMXConnector {
 
   private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
-  
+
   enum State {
     INITIAL,
     CONNECTED,
     CLOSED;
   }
-  
+
   private static final AtomicInteger ID_GENERATOR = new AtomicInteger(1);
-  
+
   private final AtomicLong sequenceNumberGenerator = new AtomicLong(0);
 
   private final URL url;
-  
+
   private final int id;
-  
+
   private final Lock sateLock;
-  
+
   private State state;
 
   private JmxHttpConnection mBeanServerConnection;
-  
+
   private final ListenerNotifier notifier;
 
   JmxHttpConnector(URL url) {
@@ -86,16 +103,64 @@ final class JmxHttpConnector implements JMXConnector {
       if (this.state == State.CLOSED) {
         throw new IOException("already closed");
       }
-      
+
       this.state = State.CONNECTED;
       Optional<String> credentials = extractCredentials(env);
-      this.mBeanServerConnection = new JmxHttpConnection(this.url, credentials, this.notifier);
+      long correlationId = getCorrelationId(credentials);
+      this.mBeanServerConnection = new JmxHttpConnection(correlationId, this.url, credentials, this.notifier);
       this.notifier.connected();
     } finally {
       this.sateLock.unlock();
     }
-
   }
+
+  private long getCorrelationId(Optional<String> credentials) throws IOException {
+    URL registrationUrl = new URL(this.url.toString() + '?' + PARAMETER_ACTION + '=' + ACTION_REGISTER);
+    HttpURLConnection urlConnection = (HttpURLConnection) registrationUrl.openConnection();
+    try {
+      if (credentials.isPresent()) {
+        urlConnection.setRequestProperty("Authorization", credentials.get());
+      }
+      int status = urlConnection.getResponseCode();
+      if (status == 200) {
+        try (InputStream in = urlConnection.getInputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+          String line = reader.readLine();
+          if (line == null) {
+            throw new IOException("correlation id missing");
+          }
+          try {
+            return Long.parseLong(line);
+          } catch (NumberFormatException e) {
+            throw new IOException("could not parse correlation id: " + line);
+          }
+        }
+      } else {
+        throw new IOException("http request failed with status: " + status);
+      }
+    } finally {
+      urlConnection.disconnect();
+    }
+  }
+  
+  private void unregister(Optional<String> credentials, long correlationId) throws IOException {
+    URL registrationUrl = new URL(this.url.toString() + '?' + PARAMETER_ACTION + '=' + ACTION_UNREGISTER + '&' + PARAMETER_CORRELATION_ID + '=' + correlationId);
+    HttpURLConnection urlConnection = (HttpURLConnection) registrationUrl.openConnection();
+    try {
+      if (credentials.isPresent()) {
+        urlConnection.setRequestProperty("Authorization", credentials.get());
+      }
+      int status = urlConnection.getResponseCode();
+      if (status == 200) {
+        return;
+      } else {
+        throw new IOException("http request failed with status: " + status);
+      }
+    } finally {
+      urlConnection.disconnect();
+    }
+  }
+
   private static Optional<String> extractCredentials(Map<String, ?> env) {
     if (env == null) {
       return Optional.empty();
@@ -130,8 +195,12 @@ final class JmxHttpConnector implements JMXConnector {
       if (this.state == State.CLOSED) {
         return;
       }
-      this.mBeanServerConnection = null;
       this.notifier.closed();
+      try {
+        this.unregister(this.mBeanServerConnection.getCredentials(), this.mBeanServerConnection.getCorrelationId());
+      } finally {
+        this.mBeanServerConnection = null;
+      }
     } finally {
       this.sateLock.unlock();
     }
@@ -158,10 +227,10 @@ final class JmxHttpConnector implements JMXConnector {
     AccessControlContext acc = AccessController.getContext();
     Subject subject = Subject.getSubject(acc);
     if (subject != null) {
-   // Retrieve JMXPrincipal from Subject
+      // Retrieve JMXPrincipal from Subject
       Set<JMXPrincipal> principals = subject.getPrincipals(JMXPrincipal.class);
       if (principals == null || principals.isEmpty()) {
-          throw new SecurityException("Access denied");
+        throw new SecurityException("Access denied");
       }
       Principal principal = principals.iterator().next();
       String identity = principal.getName();
@@ -207,16 +276,16 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
   }
-  
+
   final class ListenerNotifier implements Notifier {
 
     // CopyOnWriteArrayList does not support Iterator#remove
     private final List<Subscription> listeners;
-    
+
     ListenerNotifier() {
       this.listeners = Collections.synchronizedList(new ArrayList<>());
     }
-    
+
     void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
       synchronized (this.listeners) {
         this.listeners.add(new Subscription(listener, filter, handback));
@@ -248,13 +317,13 @@ final class JmxHttpConnector implements JMXConnector {
         }
       }
     }
-    
+
     @Override
     public void connected() {
       if (this.listeners.isEmpty()) {
         return;
       }
-      
+
       String type = JMXConnectionNotification.OPENED;
       Object source = JmxHttpConnector.this;
       String connectionId = getConnectionId();
@@ -262,16 +331,16 @@ final class JmxHttpConnector implements JMXConnector {
       String message = "connection opened";
       Object userData = null;
       JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
-      
+
       sendNotification(notification);
     }
-    
+
     @Override
     public void closed() {
       if (this.listeners.isEmpty()) {
         return;
       }
-      
+
       String type = JMXConnectionNotification.CLOSED;
       Object source = JmxHttpConnector.this;
       String connectionId = getConnectionId();
@@ -279,7 +348,7 @@ final class JmxHttpConnector implements JMXConnector {
       String message = "connection closed";
       Object userData = null;
       JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
-      
+
       sendNotification(notification);
     }
 
@@ -288,7 +357,7 @@ final class JmxHttpConnector implements JMXConnector {
       if (this.listeners.isEmpty()) {
         return;
       }
-      
+
       String type = JMXConnectionNotification.FAILED;
       Object source = JmxHttpConnector.this;
       String connectionId = getConnectionId();
@@ -296,7 +365,7 @@ final class JmxHttpConnector implements JMXConnector {
       String message = "exception occurred";
       Object userData = exception;
       JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
-      
+
       sendNotification(notification);
     }
 
@@ -317,7 +386,7 @@ final class JmxHttpConnector implements JMXConnector {
         }
       }
     }
-    
+
   }
 
 }

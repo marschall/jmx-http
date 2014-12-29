@@ -1,30 +1,32 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
 import java.lang.invoke.MethodHandles;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -40,15 +42,6 @@ import javax.management.remote.JMXConnectionNotification;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
-
-import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
-
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_LISTEN;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * The connector creates {@link MBeanServerConnection}s and manages
@@ -142,7 +135,7 @@ final class JmxHttpConnector implements JMXConnector {
       urlConnection.disconnect();
     }
   }
-  
+
   private void unregister(Optional<String> credentials, long correlationId) throws IOException {
     URL registrationUrl = new URL(this.url.toString() + '?' + PARAMETER_ACTION + '=' + ACTION_UNREGISTER + '&' + PARAMETER_CORRELATION_ID + '=' + correlationId);
     HttpURLConnection urlConnection = (HttpURLConnection) registrationUrl.openConnection();
@@ -280,109 +273,140 @@ final class JmxHttpConnector implements JMXConnector {
   final class ListenerNotifier implements Notifier {
 
     // CopyOnWriteArrayList does not support Iterator#remove
+    // VisualVM calls #removeConnectionNotificationListener from
+    // NotificationListener#handleNotification in the same thread
+    // Should only be accessed from #listenerThread
     private final List<Subscription> listeners;
 
+    private final BlockingDeque<Runnable> commands;
+
+    private final Thread listenerManager;
+
     ListenerNotifier() {
-      this.listeners = Collections.synchronizedList(new ArrayList<>());
+      this.listeners = new ArrayList<>();
+      this.commands = new LinkedBlockingDeque<>();
+      this.listenerManager = new Thread(this::runComandLoop, "Listener-Manager for " + id);
     }
 
-    void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
-      synchronized (this.listeners) {
-        this.listeners.add(new Subscription(listener, filter, handback));
+    private void runComandLoop() {
+      while(true) {
+        try {
+          Runnable command = this.commands.take();
+          command.run();
+        } catch (InterruptedException e) {
+          LOG.log(Level.FINE, "interrupted, shutting down", e);
+        } catch (RuntimeException e) {
+          LOG.log(Level.WARNING, "exception occrred while processing event", e);
+        }
       }
     }
 
-    void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
+    void addConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) {
+      this.commands.add(() -> {
+        this.listeners.add(new Subscription(listener, filter, handback));
+      });
+    }
 
-      synchronized (this.listeners) {
-        boolean found = false;
+    void removeConnectionNotificationListener(NotificationListener listener) throws ListenerNotFoundException {
+      
+      this.commands.add(() -> {
+//        boolean found = false;
         Iterator<Subscription> iterator = this.listeners.iterator();
         while (iterator.hasNext()) {
           Subscription subscription = iterator.next();
           if (subscription.listener == listener) {
             iterator.remove();
-            found = true;
+//            found = true;
           }
         }
-        if (!found) {
-          throw new ListenerNotFoundException();
-        }
-      }
+        
+        // TODO enable causes deadlock?
+//        if (!found) {
+//          throw new ListenerNotFoundException();
+//        }
+      });
     }
 
     void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
-      synchronized (this.listeners) {
+      // TODO deadlock?
+      
+      this.commands.add(() -> {
         if (!this.listeners.remove(new Subscription(listener, filter, handback))) {
-          throw new ListenerNotFoundException();
+          // TODO enable causes deadlock?
+//          throw new ListenerNotFoundException();
         }
-      }
+      });
     }
 
     @Override
     public void connected() {
-      if (this.listeners.isEmpty()) {
-        return;
-      }
+      this.commands.add(() -> {
+        if (this.listeners.isEmpty()) {
+          return;
+        }
 
-      String type = JMXConnectionNotification.OPENED;
-      Object source = JmxHttpConnector.this;
-      String connectionId = getConnectionId();
-      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
-      String message = "connection opened";
-      Object userData = null;
-      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+        String type = JMXConnectionNotification.OPENED;
+        Object source = JmxHttpConnector.this;
+        String connectionId = getConnectionId();
+        long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+        String message = "connection opened";
+        Object userData = null;
+        JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
 
-      sendNotification(notification);
+        sendNotification(notification);
+      });
     }
 
     @Override
     public void closed() {
-      if (this.listeners.isEmpty()) {
-        return;
-      }
+      this.commands.add(() -> {
+        if (this.listeners.isEmpty()) {
+          return;
+        }
 
-      String type = JMXConnectionNotification.CLOSED;
-      Object source = JmxHttpConnector.this;
-      String connectionId = getConnectionId();
-      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
-      String message = "connection closed";
-      Object userData = null;
-      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+        String type = JMXConnectionNotification.CLOSED;
+        Object source = JmxHttpConnector.this;
+        String connectionId = getConnectionId();
+        long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+        String message = "connection closed";
+        Object userData = null;
+        JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
 
-      sendNotification(notification);
+        sendNotification(notification);
+        listenerManager.interrupt();
+      });
     }
 
     @Override
     public void exceptionOccurred(Exception exception) {
-      if (this.listeners.isEmpty()) {
-        return;
-      }
+      this.commands.add(() -> {
+        if (this.listeners.isEmpty()) {
+          return;
+        }
 
-      String type = JMXConnectionNotification.FAILED;
-      Object source = JmxHttpConnector.this;
-      String connectionId = getConnectionId();
-      long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
-      String message = "exception occurred";
-      Object userData = exception;
-      JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+        String type = JMXConnectionNotification.FAILED;
+        Object source = JmxHttpConnector.this;
+        String connectionId = getConnectionId();
+        long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+        String message = "exception occurred";
+        Object userData = exception;
+        JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
 
-      sendNotification(notification);
+        sendNotification(notification);
+      });
     }
 
     private void sendNotification(JMXConnectionNotification notification) {
-      // TODO move to custom thread
-      synchronized (this.listeners) {
-        for (Subscription subscription : this.listeners) {
-          NotificationFilter filter = subscription.filter;
-          if (filter != null && !filter.isNotificationEnabled(notification)) {
-            continue;
-          }
-          try {
-            subscription.listener.handleNotification(notification, subscription.handback);
-          } catch (RuntimeException e) {
-            // make sure even is delivered to all listeners
-            LOG.log(Level.WARNING, "exception occrred while delivering event to listener", e);
-          }
+      for (Subscription subscription : this.listeners) {
+        NotificationFilter filter = subscription.filter;
+        if (filter != null && !filter.isNotificationEnabled(notification)) {
+          continue;
+        }
+        try {
+          subscription.listener.handleNotification(notification, subscription.handback);
+        } catch (RuntimeException e) {
+          // make sure even is delivered to all listeners
+          LOG.log(Level.WARNING, "exception occrred while delivering event to listener", e);
         }
       }
     }

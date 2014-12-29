@@ -10,6 +10,7 @@ This connector is intended to be used in cases where you'll already have an HTTP
  * HTTP punches through any firewall. In general .
  * An existing port can be used.
  * HTTP is already supported by a lot of network infrastructure.
+  * Piggy backs on your existing HTTP infrastructure for authentication, authorization and encryption.
  * This connector is quite lightweight:
   * The protocol runs plain Java Serialization over HTTP, not XML or even SOAP.
   * notifications are done with long poll for maximum compatibility and low latency

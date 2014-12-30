@@ -5,8 +5,11 @@ import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_AC
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.JAVA_SERIALIZED_OBJECT;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -44,11 +47,10 @@ import javax.servlet.http.HttpServletResponse;
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.NotificationRegistry;
+import com.github.marschall.jmxhttp.common.http.HttpConstant;
 import com.github.marschall.jmxhttp.common.http.RemoteNotification;
 
 public class JmxHttpServlet extends HttpServlet {
-
-  private static final String JAVA_SERIALIZED_OBJECT = "application/x-java-serialized-object";
 
   private static final String DISPATCH = "com.github.marschall.jmxhttp.server.servlet.dispatch";
 
@@ -163,20 +165,43 @@ public class JmxHttpServlet extends HttpServlet {
     }
 
     Command<?> command;
-
+    
+//    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+//    try (InputStream in = request.getInputStream()) {
+//      byte[] buffer = new byte[1024];
+//      int read = in.read();
+//      while (read != -1) {
+//        bos.write(buffer, 0, read);
+//        read = in.read();
+//      }
+//    }
+//    byte[] data = bos.toByteArray();
+//    try (ObjectInputStream stream = new ClassLoaderObjectInputStream(new ByteArrayInputStream(data), this.classLoader)) {
+//      Object object = stream.readObject();
+//      if (object instanceof Command) {
+//        command = (Command<?>) object;
+//      } else {
+//        return;
+//      }
+//    } catch (ClassNotFoundException e) {
+//      sendError("class not found", e, response);
+//      return;
+//    }
+    
     try (InputStream in = request.getInputStream();
         ObjectInputStream stream = new ClassLoaderObjectInputStream(in, this.classLoader)) {
       Object object = stream.readObject();
       if (object instanceof Command) {
         command = (Command<?>) object;
       } else {
+        // TODO notify client
         return;
       }
     } catch (ClassNotFoundException e) {
       sendError("class not found", e, response);
       return;
     }
-
+    
     Object result;
     try {
       result = command.execute(this.server, correlation.registry);

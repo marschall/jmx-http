@@ -190,7 +190,9 @@ final class JmxHttpConnector implements JMXConnector {
       }
       this.notifier.closed();
       try {
-        this.unregister(this.mBeanServerConnection.getCredentials(), this.mBeanServerConnection.getCorrelationId());
+        if (this.mBeanServerConnection != null) {
+          this.unregister(this.mBeanServerConnection.getCredentials(), this.mBeanServerConnection.getCorrelationId());
+        }
       } finally {
         this.mBeanServerConnection = null;
       }

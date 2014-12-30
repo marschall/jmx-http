@@ -1,13 +1,19 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.JAVA_SERIALIZED_OBJECT;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Optional;
 import java.util.Set;
@@ -64,13 +70,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   private final long correlationId;
   private final URL url;
+  private final URL actionUrl;
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
   private final Notifier notifier;
 
-  protected JmxHttpConnection(long correlationId, URL url, Optional<String> credentials, Notifier notifier) {
+  protected JmxHttpConnection(long correlationId, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
     this.correlationId = correlationId;
     this.url = url;
+    this.actionUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + correlationId);
     this.credentials = credentials;
     this.classLoader = this.getClass().getClassLoader();
     this.notifier = notifier;
@@ -218,14 +226,18 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private <R> R sendProtected(Command<R> command) throws IOException {
     HttpURLConnection urlConnection = this.openConnection();
     try {
-      if (credentials.isPresent()) {
-        urlConnection.setRequestProperty("Authorization", credentials.get());
-      }
-      //    urlConnection.setRequestProperty("Connection", "keep-alive");
-      try (OutputStream out = urlConnection.getOutputStream();
-          ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
+      // urlConnection.setRequestProperty("Connection", "keep-alive");
+      ByteArrayOutputStream bos = new ByteArrayOutputStream();
+      try (ObjectOutputStream stream = new ObjectOutputStream(bos)) {
         stream.writeObject(command);
       }
+      try (OutputStream out = urlConnection.getOutputStream()) {
+        out.write(bos.toByteArray());
+      }
+//      try (OutputStream out = urlConnection.getOutputStream();
+//          ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
+//        stream.writeObject(command);
+//      }
 
       int status = urlConnection.getResponseCode();
       if (status == 200) {
@@ -247,6 +259,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
           }
         }
       } else {
+        // TODO read body
         throw new IOException("http request failed with status: " + status);
       }
     } finally {
@@ -266,10 +279,14 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   private HttpURLConnection openConnection() throws IOException {
     // can only be set once
-    HttpURLConnection urlConnection = (HttpURLConnection) this.url.openConnection();
+    HttpURLConnection urlConnection = (HttpURLConnection) this.actionUrl.openConnection();
     urlConnection.setDoOutput(true);
     urlConnection.setChunkedStreamingMode(0);
     urlConnection.setRequestMethod("POST");
+    if (credentials.isPresent()) {
+      urlConnection.setRequestProperty("Authorization", credentials.get());
+    }
+    urlConnection.setRequestProperty("Content-type", JAVA_SERIALIZED_OBJECT);
     return urlConnection;
   }
 

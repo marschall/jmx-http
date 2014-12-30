@@ -7,6 +7,7 @@ public final class HttpConstant {
   public static final String ACTION_REGISTER = "register";
   public static final String PARAMETER_CORRELATION_ID = "correlationId";
   public static final String PARAMETER_ACTION = "action";
+  public static final String JAVA_SERIALIZED_OBJECT = "application/x-java-serialized-object";
 
   private HttpConstant() {
     throw new AssertionError("not instantiable");

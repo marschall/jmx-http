@@ -9,11 +9,17 @@ import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CO
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.lang.invoke.MethodHandles;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
@@ -56,6 +62,7 @@ import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 import com.github.marschall.jmxhttp.common.http.Registration;
+import com.github.marschall.jmxhttp.common.http.RemoteNotification;
 
 
 /**
@@ -64,6 +71,10 @@ import com.github.marschall.jmxhttp.common.http.Registration;
  */
 final class JmxHttpConnection implements MBeanServerConnection {
 
+  private static final int FUDGE = (int) TimeUnit.SECONDS.toMillis(1L);
+
+  private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
+  
   private final Registration registration;
   private final URL url;
   private final URL actionUrl;
@@ -71,8 +82,9 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
   private final Notifier notifier;
+  private final Thread pollerThread;
 
-  protected JmxHttpConnection(Registration registration, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
+  protected JmxHttpConnection(int id, Registration registration, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
     this.registration = registration;
     this.url = url;
     this.actionUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + registration.getCorrelationId());
@@ -80,7 +92,8 @@ final class JmxHttpConnection implements MBeanServerConnection {
     this.credentials = credentials;
     this.classLoader = JmxHttpConnection.class.getClassLoader();
     this.notifier = notifier;
-    // TODO register listener
+    this.pollerThread = new Thread(this::listenLoop, "Long-Poll-Client for " + id);
+    this.pollerThread.start();
   }
 
   Optional<String> getCredentials() {
@@ -220,6 +233,11 @@ final class JmxHttpConnection implements MBeanServerConnection {
   public boolean isInstanceOf(ObjectName name, String className) throws InstanceNotFoundException, IOException {
     return send(new IsInstanceOf(name, className));
   }
+  
+  void close() {
+    this.pollerThread.interrupt();
+    // REVIEW join?
+  }
 
   private <R> R sendProtected(Command<R> command) throws IOException {
     HttpURLConnection urlConnection = this.openConnection();
@@ -262,24 +280,61 @@ final class JmxHttpConnection implements MBeanServerConnection {
     if (credentials.isPresent()) {
       urlConnection.setRequestProperty("Authorization", credentials.get());
     }
-    // TODO increase fudge?
-    int timeout = Math.max(0, (int) this.registration.getTimeoutMilliseconds());
+    int timeout = Math.max(0, (int) this.registration.getTimeoutMilliseconds() + FUDGE);
     urlConnection.setReadTimeout(timeout);
     return urlConnection;
   }
 
   private void listenLoop() {
-    while (true) {
-//      HttpURLConnection urlConnection = this.openListenConnection();
-//      try {
-//        
-//      } finally {
-//        urlConnection.disconnect();
-//      }
+    while (!Thread.currentThread().isInterrupted()) {
+      HttpURLConnection urlConnection;
+      try {
+        urlConnection = this.openListenConnection();
+      } catch (IOException e) {
+        LOG.log(Level.WARNING, "could not open listen loop, notifications will be dropped", e);
+        // TODO connection listeners?
+        return;
+      }
+      try {
+        Object response;
+        try {
+          response = readResponseAsObject(urlConnection, classLoader);
+        } catch (SocketTimeoutException e) {
+          LOG.log(Level.FINE, "long poll read timeout", e);
+          continue;
+        } catch (IOException e) {
+          // TODO connection listeners?
+          LOG.log(Level.WARNING, "could not read response", e);
+          continue;
+        }
+        if (response instanceof List) {
+          List<?> notifications = (List<?>) response;
+          for (Object each : notifications) {
+            if (each instanceof RemoteNotification) {
+              RemoteNotification notification = (RemoteNotification) each;
+              sendNotification(notification.getNotification(), notification.getListenerId(), notification.getObjectId());
+            } else {
+              if (each != null) {
+                LOG.log(Level.WARNING, "notifaction ignored, has to be " + RemoteNotification.class + " but was " + each.getClass());
+              } else {
+                LOG.log(Level.WARNING, "notifaction ignored, has to be " + RemoteNotification.class + " but was null");
+              }
+            }
+          }
+        } else {
+          if (response != null) {
+            LOG.log(Level.WARNING, "response ignored, has to be " + List.class + " but was " + response.getClass());
+          } else {
+            LOG.log(Level.WARNING, "response ignored, has to be " + List.class + " but was null");
+          }
+        }
+      } finally {
+        urlConnection.disconnect();
+      }
     }
   }
 
-  private void sendNotification(Notification notification, long listenerId) {
+  private void sendNotification(Notification notification, long listenerId, Long handbackId) {
 
   }
   //

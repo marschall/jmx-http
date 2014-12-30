@@ -99,7 +99,7 @@ final class JmxHttpConnector implements JMXConnector {
       this.state = State.CONNECTED;
       Optional<String> credentials = extractCredentials(env);
       Registration registration = getRegistration(credentials);
-      this.mBeanServerConnection = new JmxHttpConnection(registration, this.url, credentials, this.notifier);
+      this.mBeanServerConnection = new JmxHttpConnection(this.id, registration, this.url, credentials, this.notifier);
       this.notifier.connected();
     } finally {
       this.sateLock.unlock();
@@ -180,6 +180,7 @@ final class JmxHttpConnector implements JMXConnector {
       try {
         if (this.mBeanServerConnection != null) {
           this.unregister(this.mBeanServerConnection.getCredentials(), this.mBeanServerConnection.getCorrelationId());
+          this.mBeanServerConnection.close();
         }
       } finally {
         this.mBeanServerConnection = null;
@@ -276,6 +277,7 @@ final class JmxHttpConnector implements JMXConnector {
       this.listeners = new ArrayList<>();
       this.commands = new LinkedBlockingDeque<>();
       this.listenerManager = new Thread(this::runComandLoop, "Listener-Manager for " + id);
+      this.listenerManager.start();
     }
 
     private void runComandLoop() {
@@ -365,6 +367,7 @@ final class JmxHttpConnector implements JMXConnector {
         sendNotification(notification);
         listenerManager.interrupt();
       });
+      // REVIEW join?
     }
 
     @Override

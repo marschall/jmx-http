@@ -1,15 +1,12 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
+import static com.github.marschall.jmxhttp.client.urlconnection.UrlConnectionUtil.readResponseAsObject;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_LISTEN;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.JAVA_SERIALIZED_OBJECT;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -40,8 +37,6 @@ import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
 import com.github.marschall.jmxhttp.common.command.AddNotificationListener;
-import com.github.marschall.jmxhttp.common.command.AddNotificationListenerRemote;
-import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.CreateMBean;
 import com.github.marschall.jmxhttp.common.command.GetAttribute;
@@ -57,11 +52,11 @@ import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
 import com.github.marschall.jmxhttp.common.command.RemoveNotificationListener;
-import com.github.marschall.jmxhttp.common.command.RemoveNotificationListenerRemote;
 import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
 import com.github.marschall.jmxhttp.common.http.Registration;
+
 
 /**
  * The actual client to server connection happens where, delegates to
@@ -72,6 +67,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private final Registration registration;
   private final URL url;
   private final URL actionUrl;
+  private final URL listenUrl;
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
   private final Notifier notifier;
@@ -80,16 +76,17 @@ final class JmxHttpConnection implements MBeanServerConnection {
     this.registration = registration;
     this.url = url;
     this.actionUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + registration.getCorrelationId());
+    this.listenUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + registration.getCorrelationId() + '&' + PARAMETER_ACTION + '=' + ACTION_LISTEN);
     this.credentials = credentials;
     this.classLoader = JmxHttpConnection.class.getClassLoader();
     this.notifier = notifier;
     // TODO register listener
   }
-  
+
   Optional<String> getCredentials() {
     return credentials;
   }
-  
+
   long getCorrelationId() {
     return registration.getCorrelationId();
   }
@@ -183,8 +180,8 @@ final class JmxHttpConnection implements MBeanServerConnection {
   public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
     System.out.println("addNotificationListener(name=" + name + ", handback=" + handback + ")");
     System.out.println("addNotificationListener(name=" + name.getCanonicalName() + ", handback=" + handback + ")");
-//    long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
-//    mapListener(listener, listenerId, handback);
+    //    long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
+    //    mapListener(listener, listenerId, handback);
   }
 
   @Override
@@ -204,14 +201,14 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException, ListenerNotFoundException {
-//    long listenerId = getListenerId(listener);
-//    send(new RemoveNotificationListenerRemote(name, listenerId));
+    //    long listenerId = getListenerId(listener);
+    //    send(new RemoveNotificationListenerRemote(name, listenerId));
   }
 
   @Override
   public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException, ListenerNotFoundException {
-//    long listenerId = getListenerId(listener);
-//    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handback));
+    //    long listenerId = getListenerId(listener);
+    //    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handback));
   }
 
   @Override
@@ -232,29 +229,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
         stream.writeObject(command);
       }
 
-      int status = urlConnection.getResponseCode();
-      if (status == 200) {
-        try (InputStream in = urlConnection.getInputStream();
-            ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
-          Object result;
-          try {
-            result = stream.readObject();
-          } catch (ClassNotFoundException e) {
-            // REVIEW will trigger listeners probably ok
-            throw new IOException("class not found", e);
-          }
-          if (result instanceof Exception) {
-            // REVIEW will trigger listeners, not sure if intended
-            throw new IOException("exception occurred on server", (Exception) result);
-            //          throw (Exception) result;
-          } else {
-            return (R) result;
-          }
-        }
-      } else {
-        // TODO read body
-        throw new IOException("http request failed with status: " + status);
-      }
+      return (R) readResponseAsObject(urlConnection, this.classLoader);
     } finally {
       urlConnection.disconnect();
     }
@@ -269,7 +244,6 @@ final class JmxHttpConnection implements MBeanServerConnection {
     }
   }
 
-
   private HttpURLConnection openConnection() throws IOException {
     // can only be set once
     HttpURLConnection urlConnection = (HttpURLConnection) this.actionUrl.openConnection();
@@ -282,28 +256,50 @@ final class JmxHttpConnection implements MBeanServerConnection {
     urlConnection.setRequestProperty("Content-type", JAVA_SERIALIZED_OBJECT);
     return urlConnection;
   }
+  
+  private HttpURLConnection openListenConnection() throws IOException {
+    HttpURLConnection urlConnection = (HttpURLConnection) this.listenUrl.openConnection();
+    if (credentials.isPresent()) {
+      urlConnection.setRequestProperty("Authorization", credentials.get());
+    }
+    // TODO increase fudge?
+    int timeout = Math.max(0, (int) this.registration.getTimeoutMilliseconds());
+    urlConnection.setReadTimeout(timeout);
+    return urlConnection;
+  }
 
-//  private void sendNotification(Notification notification, long listenerId) {
-//
-//  }
-//
-//  private Long registerHandback(Object handback) {
-//    if (handback == null) {
-//      return null;
-//    }
-//  }
-//
-//  private Object getHandback(Long handbackId) {
-//    if (handbackId == null) {
-//      return null;
-//    }
-//  }
-//
-//  private void mapListener(NotificationListener listener, long listenerId, Object handback) {
-//    // TODO Auto-generated method stub
-//
-//  }
-//  private long getListenerId(NotificationListener listener) throws ListenerNotFoundException {
-//  }
+  private void listenLoop() {
+    while (true) {
+//      HttpURLConnection urlConnection = this.openListenConnection();
+//      try {
+//        
+//      } finally {
+//        urlConnection.disconnect();
+//      }
+    }
+  }
+
+  private void sendNotification(Notification notification, long listenerId) {
+
+  }
+  //
+  //  private Long registerHandback(Object handback) {
+  //    if (handback == null) {
+  //      return null;
+  //    }
+  //  }
+  //
+  //  private Object getHandback(Long handbackId) {
+  //    if (handbackId == null) {
+  //      return null;
+  //    }
+  //  }
+  //
+  //  private void mapListener(NotificationListener listener, long listenerId, Object handback) {
+  //    // TODO Auto-generated method stub
+  //
+  //  }
+  //  private long getListenerId(NotificationListener listener) throws ListenerNotFoundException {
+  //  }
 
 }

@@ -1,20 +1,16 @@
 package com.github.marschall.jmxhttp.client.urlconnection;
 
+import static com.github.marschall.jmxhttp.client.urlconnection.UrlConnectionUtil.readResponseAsObject;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
 import java.lang.invoke.MethodHandles;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
@@ -44,7 +40,6 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
 
-import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.http.Registration;
 
 /**
@@ -118,24 +113,11 @@ final class JmxHttpConnector implements JMXConnector {
       if (credentials.isPresent()) {
         urlConnection.setRequestProperty("Authorization", credentials.get());
       }
-      int status = urlConnection.getResponseCode();
-      if (status == 200) {
-        try (InputStream in = urlConnection.getInputStream();
-            ObjectInputStream stream = new ClassLoaderObjectInputStream(in, JmxHttpConnector.class.getClassLoader())) {
-          Object result;
-          try {
-            result = stream.readObject();
-          } catch (ClassNotFoundException e) {
-            throw new IOException("class not found", e);
-          }
-          if (result instanceof Registration) {
-            return (Registration) result;
-          } else {
-            throw new IOException("result should be instance of " + Registration.class + " but was " + result);
-          }
-        }
+      Object result = readResponseAsObject(urlConnection, JmxHttpConnector.class.getClassLoader());
+      if (result instanceof Registration) {
+        return (Registration) result;
       } else {
-        throw new IOException("http request failed with status: " + status);
+        throw new IOException("result should be instance of " + Registration.class + " but was " + result);
       }
     } finally {
       urlConnection.disconnect();

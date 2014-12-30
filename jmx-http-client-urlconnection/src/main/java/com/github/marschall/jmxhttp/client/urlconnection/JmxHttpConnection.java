@@ -61,6 +61,7 @@ import com.github.marschall.jmxhttp.common.command.RemoveNotificationListenerRem
 import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
+import com.github.marschall.jmxhttp.common.http.Registration;
 
 /**
  * The actual client to server connection happens where, delegates to
@@ -68,19 +69,19 @@ import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
  */
 final class JmxHttpConnection implements MBeanServerConnection {
 
-  private final long correlationId;
+  private final Registration registration;
   private final URL url;
   private final URL actionUrl;
   private final Optional<String> credentials;
   private final ClassLoader classLoader;
   private final Notifier notifier;
 
-  protected JmxHttpConnection(long correlationId, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
-    this.correlationId = correlationId;
+  protected JmxHttpConnection(Registration registration, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
+    this.registration = registration;
     this.url = url;
-    this.actionUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + correlationId);
+    this.actionUrl = new URL(this.url.toString() + '?' + PARAMETER_CORRELATION_ID + '=' + registration.getCorrelationId());
     this.credentials = credentials;
-    this.classLoader = this.getClass().getClassLoader();
+    this.classLoader = JmxHttpConnection.class.getClassLoader();
     this.notifier = notifier;
     // TODO register listener
   }
@@ -90,7 +91,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
   }
   
   long getCorrelationId() {
-    return correlationId;
+    return registration.getCorrelationId();
   }
 
   @Override
@@ -226,18 +227,10 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private <R> R sendProtected(Command<R> command) throws IOException {
     HttpURLConnection urlConnection = this.openConnection();
     try {
-      // urlConnection.setRequestProperty("Connection", "keep-alive");
-      ByteArrayOutputStream bos = new ByteArrayOutputStream();
-      try (ObjectOutputStream stream = new ObjectOutputStream(bos)) {
+      try (OutputStream out = urlConnection.getOutputStream();
+          ObjectOutputStream stream = new ObjectOutputStream(out)) {
         stream.writeObject(command);
       }
-      try (OutputStream out = urlConnection.getOutputStream()) {
-        out.write(bos.toByteArray());
-      }
-//      try (OutputStream out = urlConnection.getOutputStream();
-//          ObjectOutputStream stream = new ObjectOutputStream(new BufferedOutputStream(out))) {
-//        stream.writeObject(command);
-//      }
 
       int status = urlConnection.getResponseCode();
       if (status == 200) {

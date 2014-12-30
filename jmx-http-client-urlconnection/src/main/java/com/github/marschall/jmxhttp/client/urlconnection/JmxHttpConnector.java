@@ -10,6 +10,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
 import java.lang.invoke.MethodHandles;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -42,6 +43,9 @@ import javax.management.remote.JMXConnectionNotification;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
+
+import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
+import com.github.marschall.jmxhttp.common.http.Registration;
 
 /**
  * The connector creates {@link MBeanServerConnection}s and manages
@@ -99,15 +103,15 @@ final class JmxHttpConnector implements JMXConnector {
 
       this.state = State.CONNECTED;
       Optional<String> credentials = extractCredentials(env);
-      long correlationId = getCorrelationId(credentials);
-      this.mBeanServerConnection = new JmxHttpConnection(correlationId, this.url, credentials, this.notifier);
+      Registration registration = getRegistration(credentials);
+      this.mBeanServerConnection = new JmxHttpConnection(registration, this.url, credentials, this.notifier);
       this.notifier.connected();
     } finally {
       this.sateLock.unlock();
     }
   }
 
-  private long getCorrelationId(Optional<String> credentials) throws IOException {
+  private Registration getRegistration(Optional<String> credentials) throws IOException {
     URL registrationUrl = new URL(this.url.toString() + '?' + PARAMETER_ACTION + '=' + ACTION_REGISTER);
     HttpURLConnection urlConnection = (HttpURLConnection) registrationUrl.openConnection();
     try {
@@ -117,15 +121,17 @@ final class JmxHttpConnector implements JMXConnector {
       int status = urlConnection.getResponseCode();
       if (status == 200) {
         try (InputStream in = urlConnection.getInputStream();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-          String line = reader.readLine();
-          if (line == null) {
-            throw new IOException("correlation id missing");
-          }
+            ObjectInputStream stream = new ClassLoaderObjectInputStream(in, JmxHttpConnector.class.getClassLoader())) {
+          Object result;
           try {
-            return Long.parseLong(line);
-          } catch (NumberFormatException e) {
-            throw new IOException("could not parse correlation id: " + line);
+            result = stream.readObject();
+          } catch (ClassNotFoundException e) {
+            throw new IOException("class not found", e);
+          }
+          if (result instanceof Registration) {
+            return (Registration) result;
+          } else {
+            throw new IOException("result should be instance of " + Registration.class + " but was " + result);
           }
         }
       } else {

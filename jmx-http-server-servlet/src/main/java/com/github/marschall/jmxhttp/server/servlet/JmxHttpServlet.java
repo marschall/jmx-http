@@ -1,15 +1,13 @@
 package com.github.marschall.jmxhttp.server.servlet;
 
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_LISTEN;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_REGISTER;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.ACTION_UNREGISTER;
-import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.JAVA_SERIALIZED_OBJECT;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_ACTION;
+import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -47,10 +45,14 @@ import javax.servlet.http.HttpServletResponse;
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.NotificationRegistry;
-import com.github.marschall.jmxhttp.common.http.HttpConstant;
+import com.github.marschall.jmxhttp.common.http.Registration;
 import com.github.marschall.jmxhttp.common.http.RemoteNotification;
 
 public class JmxHttpServlet extends HttpServlet {
+
+  private static final String POLL_TIMEOUT_SECONDS_PARAMETER = "poll-timeout-seconds";
+
+  private static final long DEFAULT_TIMEOUT_MILLISECONDS = SECONDS.toMillis(30L);
 
   private static final String DISPATCH = "com.github.marschall.jmxhttp.server.servlet.dispatch";
 
@@ -66,6 +68,8 @@ public class JmxHttpServlet extends HttpServlet {
   private volatile ClassLoader classLoader;
 
   private final ConcurrentMap<Long, Correlation> correlations = new ConcurrentHashMap<>();
+
+  private volatile long timeoutMilliseconds;
 
   static final class Correlation {
 
@@ -126,13 +130,20 @@ public class JmxHttpServlet extends HttpServlet {
   @Override
   public void init(ServletConfig config) throws ServletException {
     super.init(config);
-    String pollTimeoutSecondsParamter = config.getInitParameter("poll-timeout-seconds");
+    String pollTimeoutSecondsParamter = config.getInitParameter(POLL_TIMEOUT_SECONDS_PARAMETER);
     if (pollTimeoutSecondsParamter != null) {
-
+      try {
+        this.timeoutMilliseconds = SECONDS.toMillis(Long.parseLong(pollTimeoutSecondsParamter));
+      } catch (NumberFormatException e) {
+        LOG.log(Level.WARNING, "invalid value '" + pollTimeoutSecondsParamter + "' for servlet init parameter '" + POLL_TIMEOUT_SECONDS_PARAMETER + "'");
+        this.timeoutMilliseconds = DEFAULT_TIMEOUT_MILLISECONDS;
+      }
+    } else {
+      this.timeoutMilliseconds = DEFAULT_TIMEOUT_MILLISECONDS;
     }
 
     this.server = ManagementFactory.getPlatformMBeanServer();
-    this.classLoader = this.getClass().getClassLoader();
+    this.classLoader = JmxHttpServlet.class.getClassLoader();
   }
 
   @Override
@@ -165,29 +176,6 @@ public class JmxHttpServlet extends HttpServlet {
     }
 
     Command<?> command;
-    
-//    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-//    try (InputStream in = request.getInputStream()) {
-//      byte[] buffer = new byte[1024];
-//      int read = in.read();
-//      while (read != -1) {
-//        bos.write(buffer, 0, read);
-//        read = in.read();
-//      }
-//    }
-//    byte[] data = bos.toByteArray();
-//    try (ObjectInputStream stream = new ClassLoaderObjectInputStream(new ByteArrayInputStream(data), this.classLoader)) {
-//      Object object = stream.readObject();
-//      if (object instanceof Command) {
-//        command = (Command<?>) object;
-//      } else {
-//        return;
-//      }
-//    } catch (ClassNotFoundException e) {
-//      sendError("class not found", e, response);
-//      return;
-//    }
-    
     try (InputStream in = request.getInputStream();
         ObjectInputStream stream = new ClassLoaderObjectInputStream(in, this.classLoader)) {
       Object object = stream.readObject();
@@ -262,14 +250,12 @@ public class JmxHttpServlet extends HttpServlet {
 
       AsyncContext asyncContext = request.startAsync(request, response);
       correlation.setAsyncContext(asyncContext);
-      asyncContext.setTimeout(SECONDS.toMillis(30L));
+      asyncContext.setTimeout(this.timeoutMilliseconds);
       asyncContext.addListener(DISPATCH_ON_TIMEOUT);
     }
   }
 
   private void handleRegister(HttpServletResponse response) throws IOException {
-    response.setContentType("text/plain");
-    response.setCharacterEncoding("UTF-8");
     long correlationId = generateCorrelationId();
     NotificationRegistry registry = new ServletNotificationRegistry(correlationId);
     Correlation previous = this.correlations.putIfAbsent(correlationId, new Correlation(registry));
@@ -278,8 +264,8 @@ public class JmxHttpServlet extends HttpServlet {
       // TODO notify client
       return;
     }
-    // TODO also send timeout
-    response.getWriter().write(Long.toString(correlationId));
+    Registration registration = new Registration(correlationId, this.timeoutMilliseconds);
+    sendObject(response, registration);
   }
 
   private void handleUnregister(HttpServletRequest request, HttpServletResponse response) throws IOException {

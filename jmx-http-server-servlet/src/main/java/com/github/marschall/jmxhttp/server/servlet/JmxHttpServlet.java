@@ -8,6 +8,7 @@ import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_AC
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -25,6 +26,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.GZIPOutputStream;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
@@ -204,7 +206,8 @@ public class JmxHttpServlet extends HttpServlet {
 
   private static void sendObject(HttpServletResponse response, Object result) throws IOException {
     try (OutputStream out = response.getOutputStream();
-        ObjectOutputStream stream = new ObjectOutputStream(out)) {
+        GZIPOutputStream gzip = new GZIPOutputStream(out);
+        ObjectOutputStream stream = new ObjectOutputStream(gzip)) {
       response.setContentType(JAVA_SERIALIZED_OBJECT);
       stream.writeObject(result);
     }

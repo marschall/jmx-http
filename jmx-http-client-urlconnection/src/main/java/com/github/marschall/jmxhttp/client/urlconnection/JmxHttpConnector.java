@@ -58,7 +58,7 @@ final class JmxHttpConnector implements JMXConnector {
 
   private static final AtomicInteger ID_GENERATOR = new AtomicInteger(1);
 
-  private final AtomicLong sequenceNumberGenerator = new AtomicLong(0);
+  private final AtomicLong sequenceNumberGenerator;
 
   private final URL url;
 
@@ -78,6 +78,7 @@ final class JmxHttpConnector implements JMXConnector {
     this.sateLock = new ReentrantLock();
     this.state = State.INITIAL;
     this.notifier = new ListenerNotifier();
+    this.sequenceNumberGenerator = new AtomicLong(0L);
   }
 
   @Override
@@ -281,12 +282,13 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
     private void runComandLoop() {
-      while(true) {
+      while(!Thread.currentThread().isInterrupted()) {
         try {
           Runnable command = this.commands.take();
           command.run();
         } catch (InterruptedException e) {
           LOG.log(Level.FINE, "interrupted, shutting down", e);
+          return;
         } catch (RuntimeException e) {
           LOG.log(Level.WARNING, "exception occrred while processing event", e);
         }

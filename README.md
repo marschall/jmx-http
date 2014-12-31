@@ -28,10 +28,6 @@ A lot of network infrastructure does not (yet) support WebSockets. Using WebSock
 Per default no security is applied. You can either you your existing networking configuration to secure access or build a new WAR with servlet security. The WAR project contains only the `web.xml` so this is easy.
 The client supports HTTP Basic authentication.
 
-### Why is there no optimization applied to the protocol?
-
-As HTTP headers are huge and added for every request and optimization is the form of a custom serialized form or compression is unlikely to result in noticeable improvements.
-
 ### What about servlet logging?
 
 The servlet uses `java.util.logging` configure your server accordingly.

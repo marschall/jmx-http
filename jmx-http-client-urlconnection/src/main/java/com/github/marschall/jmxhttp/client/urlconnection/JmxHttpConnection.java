@@ -14,10 +14,17 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -43,6 +50,7 @@ import javax.management.QueryExp;
 import javax.management.ReflectionException;
 
 import com.github.marschall.jmxhttp.common.command.AddNotificationListener;
+import com.github.marschall.jmxhttp.common.command.AddNotificationListenerRemote;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.CreateMBean;
 import com.github.marschall.jmxhttp.common.command.GetAttribute;
@@ -58,6 +66,7 @@ import com.github.marschall.jmxhttp.common.command.IsRegistered;
 import com.github.marschall.jmxhttp.common.command.QueryMBeans;
 import com.github.marschall.jmxhttp.common.command.QueryNames;
 import com.github.marschall.jmxhttp.common.command.RemoveNotificationListener;
+import com.github.marschall.jmxhttp.common.command.RemoveNotificationListenerRemote;
 import com.github.marschall.jmxhttp.common.command.SetAttribute;
 import com.github.marschall.jmxhttp.common.command.SetAttributes;
 import com.github.marschall.jmxhttp.common.command.UnregisterMBean;
@@ -74,7 +83,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private static final int FUDGE = (int) TimeUnit.SECONDS.toMillis(1L);
 
   private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
-  
+
   private final Registration registration;
   private final URL url;
   private final URL actionUrl;
@@ -83,6 +92,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
   private final ClassLoader classLoader;
   private final Notifier notifier;
   private final Thread pollerThread;
+
+  private final Lock idLock;
+  private final Map<Long, NotificationListener> listeners;
+  private final Map<NotificationListener, Long> listenersToId;
+  private long listenerIdGenerator;
+  private final Map<Long, Object> handbacks;
+  private final Map<Object, Long> handbacksToId;
+  private long handbackIdGenerator;
+
 
   protected JmxHttpConnection(int id, Registration registration, URL url, Optional<String> credentials, Notifier notifier) throws MalformedURLException {
     this.registration = registration;
@@ -94,6 +112,13 @@ final class JmxHttpConnection implements MBeanServerConnection {
     this.notifier = notifier;
     this.pollerThread = new Thread(this::listenLoop, "Long-Poll-Client for " + id);
     this.pollerThread.start();
+    this.listeners = new HashMap<>();
+    this.listenersToId = new IdentityHashMap<>();
+    this.listenerIdGenerator = 0L;
+    this.handbacks = new HashMap<>();
+    this.handbacksToId = new IdentityHashMap<>();
+    this.handbackIdGenerator = 0L;
+    this.idLock = new ReentrantLock();
   }
 
   Optional<String> getCredentials() {
@@ -191,10 +216,9 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
-    System.out.println("addNotificationListener(name=" + name + ", handback=" + handback + ")");
-    System.out.println("addNotificationListener(name=" + name.getCanonicalName() + ", handback=" + handback + ")");
-    //    long listenerId = send(new AddNotificationListenerRemote(name, filter, handback));
-    //    mapListener(listener, listenerId, handback);
+    long listenerId = this.registerListener(listener);
+    Long handbackId = this.registerHandback(handback);
+    send(new AddNotificationListenerRemote(name, listenerId, filter, handbackId));
   }
 
   @Override
@@ -214,14 +238,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException, ListenerNotFoundException {
-    //    long listenerId = getListenerId(listener);
-    //    send(new RemoveNotificationListenerRemote(name, listenerId));
+    long listenerId = this.getListenerId(listener);
+    send(new RemoveNotificationListenerRemote(name, listenerId));
   }
 
   @Override
   public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException, ListenerNotFoundException {
-    //    long listenerId = getListenerId(listener);
-    //    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handback));
+    long listenerId = this.getListenerId(listener);
+    Long handbackId = this.getHandbackId(handback);
+    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handbackId));
   }
 
   @Override
@@ -233,10 +258,13 @@ final class JmxHttpConnection implements MBeanServerConnection {
   public boolean isInstanceOf(ObjectName name, String className) throws InstanceNotFoundException, IOException {
     return send(new IsInstanceOf(name, className));
   }
-  
+
   void close() {
-    this.pollerThread.interrupt();
     // REVIEW join?
+    this.pollerThread.interrupt();
+    // REVIEW unregister?
+    this.listeners.clear();
+    this.handbacks.clear();
   }
 
   private <R> R sendProtected(Command<R> command) throws IOException {
@@ -274,7 +302,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
     urlConnection.setRequestProperty("Content-type", JAVA_SERIALIZED_OBJECT);
     return urlConnection;
   }
-  
+
   private HttpURLConnection openListenConnection() throws IOException {
     HttpURLConnection urlConnection = (HttpURLConnection) this.listenUrl.openConnection();
     if (credentials.isPresent()) {
@@ -291,8 +319,8 @@ final class JmxHttpConnection implements MBeanServerConnection {
       try {
         urlConnection = this.openListenConnection();
       } catch (IOException e) {
-        LOG.log(Level.WARNING, "could not open listen loop, notifications will be dropped", e);
         // TODO connection listeners?
+        LOG.log(Level.WARNING, "could not open listen loop, notifications will be dropped", e);
         return;
       }
       try {
@@ -335,26 +363,110 @@ final class JmxHttpConnection implements MBeanServerConnection {
   }
 
   private void sendNotification(Notification notification, long listenerId, Long handbackId) {
-
+    try {
+      NotificationListener listener = getListener(listenerId);
+      Object handback = getHandback(handbackId);
+      listener.handleNotification(notification, handback);
+    } catch (RuntimeException e) {
+      LOG.log(Level.WARNING, "exception occrred while delivering event to listener", e);
+    }
   }
-  //
-  //  private Long registerHandback(Object handback) {
-  //    if (handback == null) {
-  //      return null;
-  //    }
-  //  }
-  //
-  //  private Object getHandback(Long handbackId) {
-  //    if (handbackId == null) {
-  //      return null;
-  //    }
-  //  }
-  //
-  //  private void mapListener(NotificationListener listener, long listenerId, Object handback) {
-  //    // TODO Auto-generated method stub
-  //
-  //  }
-  //  private long getListenerId(NotificationListener listener) throws ListenerNotFoundException {
-  //  }
+
+  private NotificationListener getListener(long listenerId) {
+    this.idLock.lock();
+    try {
+      NotificationListener listener = this.listeners.get(listenerId);
+      if (listener == null) {
+        System.out.println("no listener found for id: " + listenerId);
+        throw new NoSuchElementException("no listener found for id: " + listenerId);
+      }
+      return listener;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
+
+  private long registerListener(NotificationListener listener) {
+    this.idLock.lock();
+    try {
+      Objects.requireNonNull(listener, "listener must not be null");
+      this.handbackIdGenerator += 1L;
+      long id = this.listenerIdGenerator;
+      NotificationListener previous = this.listeners.putIfAbsent(id, listener);
+      if (previous != null) {
+        System.out.println("listener " + listener + " already registered");
+        throw new IllegalArgumentException("listener " + listener + " already registered");
+      }
+      this.listenersToId.put(listener, id);
+      return id;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
+
+  private Long registerHandback(Object handback) {
+    if (handback == null) {
+      return null;
+    }
+    this.idLock.lock();
+    try {
+      this.handbackIdGenerator += 1L;
+      long id = this.handbackIdGenerator;
+      Object previous = this.handbacks.putIfAbsent(id, handback);
+      if (previous != null) {
+        System.out.println("handback " + handback + " already registered");
+        throw new IllegalArgumentException("handback " + handback + " already registered");
+      }
+      handbacksToId.put(handback, id);
+      return id;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
+
+  private Object getHandback(Long handbackId) {
+    if (handbackId == null) {
+      return null;
+    }
+    this.idLock.lock();
+    try {
+      Object handback = this.handbacks.get(handbackId);
+      if (handback == null) {
+        System.out.println("no handback found for id: " + handbackId);
+        throw new NoSuchElementException("no handback found for id: " + handbackId);
+      }
+      return handback;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
+
+  private long getListenerId(NotificationListener listener) throws ListenerNotFoundException {
+    this.idLock.lock();
+    try {
+      Long id = this.listenersToId.get(listener);
+      if (id == null) {
+        throw new ListenerNotFoundException("listener: " + listener + " not found");
+      }
+      return id;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
+  private Long getHandbackId(Object handback) throws ListenerNotFoundException {
+    if (handback == null) {
+      return null;
+    }
+    this.idLock.lock();
+    try {
+      Long id = this.handbacksToId.get(handback);
+      if (id == null) {
+        throw new ListenerNotFoundException("handback: " + handback + " not found");
+      }
+      return id;
+    } finally {
+      this.idLock.unlock();
+    }
+  }
 
 }

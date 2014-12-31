@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.net.HttpURLConnection;
+import java.util.zip.GZIPInputStream;
 
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 
@@ -18,7 +19,8 @@ final class UrlConnectionUtil {
     int status = urlConnection.getResponseCode();
     if (status == 200) {
       try (InputStream in = urlConnection.getInputStream();
-          ObjectInputStream stream = new ClassLoaderObjectInputStream(new BufferedInputStream(in), classLoader)) {
+          GZIPInputStream gzip = new GZIPInputStream(new BufferedInputStream(in));
+          ObjectInputStream stream = new ClassLoaderObjectInputStream(gzip, classLoader)) {
         Object result;
         try {
           result = stream.readObject();

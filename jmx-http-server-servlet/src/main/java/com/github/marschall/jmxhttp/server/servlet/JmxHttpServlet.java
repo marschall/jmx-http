@@ -195,7 +195,8 @@ public class JmxHttpServlet extends HttpServlet {
     Object result;
     try {
       result = command.execute(this.server, correlation.registry);
-    } catch (JMException | IOException e) {
+    } catch (JMException | IOException | RuntimeException e) {
+      e.printStackTrace(System.out);
       LOG.log(Level.WARNING, "exception while executing operation", e);
       result = e;
     }
@@ -337,6 +338,7 @@ public class JmxHttpServlet extends HttpServlet {
     response.setContentType("text/plain");
     response.setCharacterEncoding("UTF-8");
     e.printStackTrace(response.getWriter());
+    e.printStackTrace(System.out);
   }
 
 

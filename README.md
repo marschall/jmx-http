@@ -37,3 +37,20 @@ Protocol Details
 
 The client serializes each request as a command object and POSTs it to a servlet. The servlet deserializes the command and executes it. Afterwards the result is serialized and sent back to the client.
 
+Caveats
+-------
+ * long polling may delay JVM shut down
+
+TODO
+-----
+Caused by: java.lang.UnsupportedOperationException: CollectionUsage threshold is not supported
+	at sun.management.MemoryPoolImpl.isCollectionUsageThresholdExceeded(MemoryPoolImpl.java:242)
+	
+ javax.management.ReflectionException: Cannot find getter method getSslEnabledProtocols
+	at org.apache.tomcat.util.modeler.ManagedBean.getGetter(ManagedBean.java:454)
+Caused by: java.lang.NoSuchMethodException: org.apache.tomcat.util.net.NioEndpoint.getSslEnabledProtocols()
+	at java.lang.Class.getMethod(Class.java:1778)
+	
+java.io.WriteAbortedException: writing aborted; java.io.NotSerializableException: org.apache.catalina.core.StandardEngine
+	at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1355)
+

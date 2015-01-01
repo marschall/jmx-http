@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.MissingResourceException;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,6 +36,8 @@ import javax.management.InstanceAlreadyExistsException;
 import javax.management.InstanceNotFoundException;
 import javax.management.IntrospectionException;
 import javax.management.InvalidAttributeValueException;
+import javax.management.JMException;
+import javax.management.JMRuntimeException;
 import javax.management.ListenerNotFoundException;
 import javax.management.MBeanException;
 import javax.management.MBeanInfo;
@@ -131,132 +134,270 @@ final class JmxHttpConnection implements MBeanServerConnection {
 
   @Override
   public ObjectInstance createMBean(String className, ObjectName name) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, IOException {
-    return send(new CreateMBean(className, name, null, null, null));
+    try {
+      return send(new CreateMBean(className, name, null, null, null));
+    } catch (ReflectionException | InstanceAlreadyExistsException | MBeanException | NotCompliantMBeanException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public ObjectInstance createMBean(String className, ObjectName name, ObjectName loaderName) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, InstanceNotFoundException, IOException {
-    return send(new CreateMBean(className, name, loaderName, null, null));
+    try {
+      return send(new CreateMBean(className, name, loaderName, null, null));
+    } catch (ReflectionException | InstanceAlreadyExistsException | MBeanException | NotCompliantMBeanException | InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public ObjectInstance createMBean(String className, ObjectName name, Object[] params, String[] signature) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, IOException {
-    return send(new CreateMBean(className, name, null, params, signature));
+    try {
+      return send(new CreateMBean(className, name, null, params, signature));
+    } catch (ReflectionException | InstanceAlreadyExistsException | MBeanException | NotCompliantMBeanException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public ObjectInstance createMBean(String className, ObjectName name, ObjectName loaderName, Object[] params, String[] signature) throws ReflectionException, InstanceAlreadyExistsException, MBeanRegistrationException, MBeanException, NotCompliantMBeanException, InstanceNotFoundException, IOException {
-    return send(new CreateMBean(className, name, loaderName, params, signature));
+    try {
+      return send(new CreateMBean(className, name, loaderName, params, signature));
+    } catch (ReflectionException | InstanceAlreadyExistsException | MBeanException | NotCompliantMBeanException | InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public void unregisterMBean(ObjectName name) throws InstanceNotFoundException, MBeanRegistrationException, IOException {
-    send(new UnregisterMBean(name));
+    try {
+      send(new UnregisterMBean(name));
+    } catch (InstanceNotFoundException | MBeanRegistrationException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public ObjectInstance getObjectInstance(ObjectName name) throws InstanceNotFoundException, IOException {
-    return send(new GetObjectInstance(name));
+    try {
+      return send(new GetObjectInstance(name));
+    } catch (InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public Set<ObjectInstance> queryMBeans(ObjectName name, QueryExp query) throws IOException {
-    return send(new QueryMBeans(name, query));
+    try {
+      return send(new QueryMBeans(name, query));
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public Set<ObjectName> queryNames(ObjectName name, QueryExp query) throws IOException {
-    return send(new QueryNames(name, query));
+    try {
+      return send(new QueryNames(name, query));
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public boolean isRegistered(ObjectName name) throws IOException {
-    return send(new IsRegistered(name));
+    try {
+      return send(new IsRegistered(name));
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public Integer getMBeanCount() throws IOException {
-    return send(new GetMBeanCount());
+    try {
+      return send(new GetMBeanCount());
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public Object getAttribute(ObjectName name, String attribute) throws MBeanException, AttributeNotFoundException, InstanceNotFoundException, ReflectionException, IOException {
-    return send(new GetAttribute(name, attribute));
+    try {
+      return send(new GetAttribute(name, attribute));
+    } catch (MBeanException | AttributeNotFoundException | InstanceNotFoundException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public AttributeList getAttributes(ObjectName name, String[] attributes) throws InstanceNotFoundException, ReflectionException, IOException {
-    return send(new GetAttributes(name, attributes));
+    try {
+      return send(new GetAttributes(name, attributes));
+    } catch (InstanceNotFoundException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public void setAttribute(ObjectName name, Attribute attribute) throws InstanceNotFoundException, AttributeNotFoundException, InvalidAttributeValueException, MBeanException, ReflectionException, IOException {
-    send(new SetAttribute(name, attribute));
+    try {
+      send(new SetAttribute(name, attribute));
+    } catch (InstanceNotFoundException | AttributeNotFoundException | InvalidAttributeValueException | MBeanException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public AttributeList setAttributes(ObjectName name, AttributeList attributes) throws InstanceNotFoundException, ReflectionException, IOException {
-    return send(new SetAttributes(name, attributes));
+    try {
+      return send(new SetAttributes(name, attributes));
+    } catch (InstanceNotFoundException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public Object invoke(ObjectName name, String operationName, Object[] params, String[] signature) throws InstanceNotFoundException, MBeanException, ReflectionException, IOException {
-    return send(new Invoke(name, operationName, params, signature));
+    try {
+      return send(new Invoke(name, operationName, params, signature));
+    } catch (InstanceNotFoundException | MBeanException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public String getDefaultDomain() throws IOException {
-    return send(new GetDefaultDomain());
+    try {
+      return send(new GetDefaultDomain());
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public String[] getDomains() throws IOException {
-    return send(new GetDomains());
+    try {
+      return send(new GetDomains());
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException {
+  public void addNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws InstanceNotFoundException, IOException {
     long listenerId = this.registerListener(listener);
     Long handbackId = this.registerHandback(handback);
-    send(new AddNotificationListenerRemote(name, listenerId, filter, handbackId));
+    try {
+      send(new AddNotificationListenerRemote(name, listenerId, filter, handbackId));
+    } catch (InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void addNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
-    send(new AddNotificationListener(name, listener, filter, handback));
+  public void addNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws InstanceNotFoundException, IOException {
+    try {
+      send(new AddNotificationListener(name, listener, filter, handback));
+    } catch (InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, ObjectName listener) throws IOException {
-    send(new RemoveNotificationListener(name, listener));
+  public void removeNotificationListener(ObjectName name, ObjectName listener) throws InstanceNotFoundException, ListenerNotFoundException, IOException {
+    try {
+      send(new RemoveNotificationListener(name, listener));
+    } catch (InstanceNotFoundException | ListenerNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws IOException {
-    send(new RemoveNotificationListener(name, listener, filter, handback));
+  public void removeNotificationListener(ObjectName name, ObjectName listener, NotificationFilter filter, Object handback) throws InstanceNotFoundException, ListenerNotFoundException, IOException {
+    try {
+      send(new RemoveNotificationListener(name, listener, filter, handback));
+    } catch (InstanceNotFoundException | ListenerNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException, ListenerNotFoundException {
+  public void removeNotificationListener(ObjectName name, NotificationListener listener) throws IOException, InstanceNotFoundException, ListenerNotFoundException {
     long listenerId = this.getListenerId(listener);
-    send(new RemoveNotificationListenerRemote(name, listenerId));
+    try {
+      send(new RemoveNotificationListenerRemote(name, listenerId));
+    } catch (InstanceNotFoundException | ListenerNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
-  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException, ListenerNotFoundException {
+  public void removeNotificationListener(ObjectName name, NotificationListener listener, NotificationFilter filter, Object handback) throws IOException, InstanceNotFoundException, ListenerNotFoundException {
     long listenerId = this.getListenerId(listener);
     Long handbackId = this.getHandbackId(handback);
-    send(new RemoveNotificationListenerRemote(name, listenerId, filter, handbackId));
+    try {
+      send(new RemoveNotificationListenerRemote(name, listenerId, filter, handbackId));
+    } catch (InstanceNotFoundException | ListenerNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public MBeanInfo getMBeanInfo(ObjectName name) throws InstanceNotFoundException, IntrospectionException, ReflectionException, IOException {
-    return send(new GetMBeanInfo(name));
+    try {
+      return send(new GetMBeanInfo(name));
+    } catch (InstanceNotFoundException | IntrospectionException | ReflectionException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   @Override
   public boolean isInstanceOf(ObjectName name, String className) throws InstanceNotFoundException, IOException {
-    return send(new IsInstanceOf(name, className));
+    try {
+      return send(new IsInstanceOf(name, className));
+    } catch (InstanceNotFoundException e) {
+      throw e;
+    } catch (JMException e) {
+      throw newJmRuntimeException(e);
+    }
   }
 
   void close() {
@@ -267,7 +408,13 @@ final class JmxHttpConnection implements MBeanServerConnection {
     this.handbacks.clear();
   }
 
-  private <R> R sendProtected(Command<R> command) throws IOException {
+  private JMRuntimeException newJmRuntimeException(JMException e) {
+    JMRuntimeException runtimeException = new JMRuntimeException("undeclared exception");
+    runtimeException.initCause(e);
+    return runtimeException;
+  }
+
+  private <R> R sendProtected(Command<R> command) throws IOException, JMException {
     HttpURLConnection urlConnection = this.openConnection();
     try {
       try (OutputStream out = urlConnection.getOutputStream();
@@ -281,7 +428,7 @@ final class JmxHttpConnection implements MBeanServerConnection {
     }
   }
 
-  private synchronized <R> R send(Command<R> command) throws IOException {
+  private <R> R send(Command<R> command) throws IOException, JMException {
     try {
       return this.sendProtected(command);
     } catch (IOException e) {
@@ -332,6 +479,9 @@ final class JmxHttpConnection implements MBeanServerConnection {
           continue;
         } catch (IOException e) {
           // TODO connection listeners?
+          LOG.log(Level.WARNING, "could not read response", e);
+          continue;
+        } catch (JMException e) {
           LOG.log(Level.WARNING, "could not read response", e);
           continue;
         }

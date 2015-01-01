@@ -31,6 +31,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.management.JMException;
 import javax.management.ListenerNotFoundException;
 import javax.management.MBeanServerConnection;
 import javax.management.NotificationFilter;
@@ -114,7 +115,12 @@ final class JmxHttpConnector implements JMXConnector {
       if (credentials.isPresent()) {
         urlConnection.setRequestProperty("Authorization", credentials.get());
       }
-      Object result = readResponseAsObject(urlConnection, JmxHttpConnector.class.getClassLoader());
+      Object result;
+      try {
+        result = readResponseAsObject(urlConnection, JmxHttpConnector.class.getClassLoader());
+      } catch (JMException e) {
+        throw new IOException("JMX operation failed", e);
+      }
       if (result instanceof Registration) {
         return (Registration) result;
       } else {
@@ -322,8 +328,6 @@ final class JmxHttpConnector implements JMXConnector {
     }
 
     void removeConnectionNotificationListener(NotificationListener listener, NotificationFilter filter, Object handback) throws ListenerNotFoundException {
-      // TODO deadlock?
-      
       this.commands.add(() -> {
         if (!this.listeners.remove(new Subscription(listener, filter, handback))) {
           // TODO enable causes deadlock?
@@ -354,19 +358,17 @@ final class JmxHttpConnector implements JMXConnector {
     @Override
     public void closed() {
       this.commands.add(() -> {
-        if (this.listeners.isEmpty()) {
-          return;
+
+        if (!this.listeners.isEmpty()) {
+          String type = JMXConnectionNotification.CLOSED;
+          Object source = JmxHttpConnector.this;
+          String connectionId = getConnectionId();
+          long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
+          String message = "connection closed";
+          Object userData = null;
+          JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
+          sendNotification(notification);
         }
-
-        String type = JMXConnectionNotification.CLOSED;
-        Object source = JmxHttpConnector.this;
-        String connectionId = getConnectionId();
-        long sequenceNumber = sequenceNumberGenerator.incrementAndGet();
-        String message = "connection closed";
-        Object userData = null;
-        JMXConnectionNotification notification = new JMXConnectionNotification(type, source, connectionId, sequenceNumber, message, userData);
-
-        sendNotification(notification);
         listenerManager.interrupt();
       });
       // REVIEW join?
@@ -374,6 +376,7 @@ final class JmxHttpConnector implements JMXConnector {
 
     @Override
     public void exceptionOccurred(Exception exception) {
+      exception.printStackTrace(System.out);
       this.commands.add(() -> {
         if (this.listeners.isEmpty()) {
           return;

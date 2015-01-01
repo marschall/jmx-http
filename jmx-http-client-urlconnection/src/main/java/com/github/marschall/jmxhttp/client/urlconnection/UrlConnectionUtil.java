@@ -52,19 +52,6 @@ final class UrlConnectionUtil {
       }
     } else {
       // TODO read body
-      StringBuilder builder = new StringBuilder();
-      char[] buffer = new char[1024];
-      try (InputStream in = urlConnection.getInputStream();
-          Reader reader = new InputStreamReader(in)) {
-        int read = reader.read(buffer);
-        while (read != -1) {
-          builder.append(buffer, 0, read);
-          read = reader.read(buffer);
-        }
-      }
-      System.out.println("XXXXXXXXXXXXXX");
-      System.out.println(builder);
-      System.out.println("XXXXXXXXXXXXXX");
       throw new IOException("http request failed with status: " + status);
     }
   }

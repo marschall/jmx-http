@@ -44,7 +44,6 @@
     <module>jmx-http-common</module>
     <module>jmx-http-client-urlconnection</module>
     <module>jmx-http-server-war</module>
-    <module>jmx-http-server-sunnet</module>
     <module>jmx-http-server-servlet</module>
   </modules>
   

@@ -11,9 +11,11 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.lang.invoke.MethodHandles;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
@@ -29,6 +31,7 @@ import java.util.logging.Logger;
 import java.util.zip.GZIPOutputStream;
 
 import javax.management.JMException;
+import javax.management.JMRuntimeException;
 import javax.management.MBeanServer;
 import javax.management.Notification;
 import javax.management.NotificationFilter;
@@ -206,11 +209,27 @@ public class JmxHttpServlet extends HttpServlet {
   }
 
   private static void sendObject(HttpServletResponse response, Object result) throws IOException {
+    if (result == null || result instanceof Serializable) {
+      sendObject(response, (Serializable) result);
+    } else {
+      LOG.log(Level.WARNING, "not Serializable: " + result);
+      sendObject(response, new JMRuntimeException("result " + result + " not Serializable"));
+    }
+  }
+  private static void sendObject(HttpServletResponse response, Serializable result) throws IOException {
     try (OutputStream out = response.getOutputStream();
         GZIPOutputStream gzip = new GZIPOutputStream(out);
         ObjectOutputStream stream = new ObjectOutputStream(gzip)) {
       response.setContentType(JAVA_SERIALIZED_OBJECT);
+      response.setHeader("Transfer-Encoding", "gzip");
       stream.writeObject(result);
+    } catch (NotSerializableException e) {
+      // various objects are exposed over JMX that are not serializable
+      // in one case it's a javax.management.AttributeList with an element that's not serializable
+      // the clean solution would be to buffer the result first into a local byte[]
+      // instead of streaming it to the response
+      LOG.log(Level.WARNING, "not Serializable(" + result.getClass() + ") " + result, e);
+      throw e;
     }
   }
 

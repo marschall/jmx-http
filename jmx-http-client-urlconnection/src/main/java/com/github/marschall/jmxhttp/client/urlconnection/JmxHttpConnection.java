@@ -432,7 +432,12 @@ final class JmxHttpConnection implements MBeanServerConnection {
     try {
       return this.sendProtected(command);
     } catch (IOException e) {
-      this.notifier.exceptionOccurred(e);
+      // sending this notification closes the MBeans tab in VisualVM
+      // this can happen in various cases for Tomcat where objects are not
+      // serializable
+      // in this case the exception is a WriteAbortedException with a cause of
+      // NotSerializableException
+//      this.notifier.exceptionOccurred(e);
       throw e;
     }
   }

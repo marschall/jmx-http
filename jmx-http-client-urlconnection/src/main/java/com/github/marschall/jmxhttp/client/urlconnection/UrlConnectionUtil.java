@@ -76,7 +76,7 @@ final class UrlConnectionUtil {
     while ((read = reader.read(buffer)) != -1) {
       builder.append(buffer, 0, read);
     }
-    return buffer.toString();
+    return builder.toString();
   }
 
   private static Object readFromStream(InputStream in, ClassLoader classLoader) throws IOException, JMException {

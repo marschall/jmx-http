@@ -32,6 +32,10 @@ The client supports HTTP Basic authentication.
 
 The servlet uses `java.util.logging` configure your server accordingly.
 
+### What about load balancing?
+
+You should not connect to the application through a load balancer since you want to monitor a specific server rather than a "random" one.
+
 Protocol Details
 ----------------
 
@@ -40,5 +44,9 @@ The client serializes each request as a command object and POSTs it to a servlet
 Caveats
 -------
  * long polling may delay JVM shut down
+
+TODO
+----
+ null checks in commands
 
 

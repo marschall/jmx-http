@@ -8,7 +8,7 @@
   <inceptionYear>2014</inceptionYear>
 
   <prerequisites>
-    <maven>2.2.1</maven>
+    <maven>3.0</maven>
   </prerequisites>
 
   <url>https://github.com/marschall/jmx-http</url>

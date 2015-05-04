@@ -8,7 +8,6 @@ import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_AC
 import static com.github.marschall.jmxhttp.common.http.HttpConstant.PARAMETER_CORRELATION_ID;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.NotSerializableException;
@@ -21,7 +20,10 @@ import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
@@ -30,13 +32,16 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.GZIPOutputStream;
 
+import javax.management.InstanceNotFoundException;
 import javax.management.JMException;
 import javax.management.JMRuntimeException;
+import javax.management.ListenerNotFoundException;
 import javax.management.MBeanServer;
 import javax.management.Notification;
 import javax.management.NotificationFilter;
 import javax.management.NotificationListener;
 import javax.management.ObjectName;
+import javax.management.OperationsException;
 import javax.servlet.AsyncContext;
 import javax.servlet.AsyncEvent;
 import javax.servlet.AsyncListener;
@@ -52,14 +57,62 @@ import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.NotificationRegistry;
 import com.github.marschall.jmxhttp.common.http.Registration;
 import com.github.marschall.jmxhttp.common.http.RemoteNotification;
+import com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet.ListenerRegistration;
 
+/**
+ * Server endpoint for tunneling JMX through HTTP.
+ *
+ * <h3>Basic Protocol</h3>
+ * The basic protocol is a follows:
+ * <ol>
+ *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_REGISTER}
+ *      to establish a pseudo session.
+ *      Result will be a serialized {@link Registration} object. This object
+ *      contains the parameters to use for the session. The session id and the long poll
+ *      timeout to use.</li>
+ *  <li>The client <code>POST</code>s a serialized {@link Command} to {@value #PARAMETER_CORRELATION_ID}=correlationId.
+ *      The result will be a serialized Java object, maybe a serialized {@link Exception} to signal and exception
+ *      occurred during processing of the command. The response by be gzip compressed.</li>
+ *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_UNREGISTER}&amp;{@value #PARAMETER_CORRELATION_ID}=correlationId
+ *      to end the pseudo session.</li>
+ * </ol>
+ *
+ * <h3>Notification Protocol</h3>
+ * The receive notifications with low latencies the server uses
+ * <a href="http://en.wikipedia.org/wiki/Push_technology#Long_polling">long polling</a>.
+ * The protocol is a follows:
+ * <ol>
+ *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_LISTEN}&amp;{@value #PARAMETER_CORRELATION_ID}=correlationId
+ *      As soon as a notification is available the server will send a
+ *      serialized {@link List} of {@link RemoteNotification}.
+ *      The server will wait sending the response up to {@value #POLL_TIMEOUT_SECONDS_PARAMETER}
+ *      seconds. This is servlet parameter that default to 30.
+ *      Should this timeout be reached and no notifications are available
+ *      the server will send serialized empty {@link List}.</li>
+ * </ol>
+ *
+ * <h3>Misc</h3>
+ *
+ * <h4>Load balancing</h4>
+ * You should not connect to this servlet through a load balancer
+ * since you want to monitor a specific server rather than a "random" one.
+ *
+ * <h4>Sessions</h4>
+ * This servlet does not use sessions.
+ *
+ * <h4>Serialization</h4>
+ * In theory the servlet supports serialization but this is not tested.
+ *
+ */
 public class JmxHttpServlet extends HttpServlet {
 
   private static final String POLL_TIMEOUT_SECONDS_PARAMETER = "poll-timeout-seconds";
 
   private static final long DEFAULT_TIMEOUT_MILLISECONDS = SECONDS.toMillis(30L);
 
-  private static final String DISPATCH = "com.github.marschall.jmxhttp.server.servlet.dispatch";
+  private static final String DISPATCH_ATTRIBUTE = "com.github.marschall.jmxhttp.server.servlet.dispatch";
+
+  private static final String CORRELATION_ATTRIBUTE = "com.github.marschall.jmxhttp.server.servlet.correlation";
 
   private static final Logger LOG = Logger.getLogger(MethodHandles.lookup().lookupClass().getName());
 
@@ -67,7 +120,7 @@ public class JmxHttpServlet extends HttpServlet {
 
   private static final AtomicLong CORRELATION_ID_GENERATOR = new AtomicLong();
 
-  private static final AsyncListener DISPATCH_ON_TIMEOUT = new DispatchOnTimeout(); 
+  private static final AsyncListener DISPATCH_ON_TIMEOUT = new DispatchOnTimeout();
 
   private volatile MBeanServer server;
   private volatile ClassLoader classLoader;
@@ -75,62 +128,6 @@ public class JmxHttpServlet extends HttpServlet {
   private final ConcurrentMap<Long, Correlation> correlations = new ConcurrentHashMap<>();
 
   private volatile long timeoutMilliseconds;
-
-  static final class Correlation {
-
-    private Deque<RemoteNotification> pendingNotifications;
-
-    private AsyncContext asyncContext;
-
-    final NotificationRegistry registry;
-
-    Correlation(NotificationRegistry registry) {
-      this.registry = registry;
-    }
-
-    synchronized AsyncContext getAsyncContext() {
-      return asyncContext;
-    }
-
-    synchronized void setAsyncContext(AsyncContext asyncContext) {
-      this.asyncContext = asyncContext;
-    }
-
-    synchronized List<RemoteNotification> drainPendingNotifications() {
-      if (this.pendingNotifications == null) {
-        return Collections.emptyList();
-      }
-      List<RemoteNotification> result = new ArrayList<>(pendingNotifications.size());
-      RemoteNotification notification = pendingNotifications.pollFirst();
-      while (notification != null) {
-        result.add(notification);
-        notification = pendingNotifications.pollFirst();
-      }
-      return result;
-    }
-
-    synchronized void dispatch() {
-      if (this.asyncContext == null) {
-        LOG.log(Level.WARNING, "not dispatching no async context");
-        return;
-      }
-
-      ServletRequest suppliedRequest = this.asyncContext.getRequest();
-      suppliedRequest.setAttribute(DISPATCH, true);
-      try {
-        asyncContext.dispatch();
-      } catch (IllegalStateException e) {
-        LOG.log(Level.WARNING, "already dispatched", e);
-      }
-    }
-
-    synchronized void addNotification(RemoteNotification notification) {
-      if (this.pendingNotifications == null) {
-        this.pendingNotifications = new ConcurrentLinkedDeque<>();
-      }
-      this.pendingNotifications.push(notification);
-    }
-  }
 
   @Override
   public void init(ServletConfig config) throws ServletException {
@@ -153,8 +150,16 @@ public class JmxHttpServlet extends HttpServlet {
 
   @Override
   public void destroy() {
-    // TODO remove listeners
+    for (Correlation correlation : this.correlations.values()) {
+      try {
+        correlation.unregisterListeners(this.server);
+      } catch (OperationsException e) {
+        // ignore has already been logged
+      }
+    }
     this.correlations.clear();
+    this.server = null;
+    this.classLoader = null;
     super.destroy();
   }
 
@@ -187,19 +192,18 @@ public class JmxHttpServlet extends HttpServlet {
       if (object instanceof Command) {
         command = (Command<?>) object;
       } else {
-        // TODO notify client
+        sendError(response, "not a command object " + (object == null ? " null " : object.getClass()));
         return;
       }
     } catch (ClassNotFoundException e) {
       sendError("class not found", e, response);
       return;
     }
-    
+
     Object result;
     try {
       result = command.execute(this.server, correlation.registry);
     } catch (JMException | IOException | RuntimeException e) {
-      e.printStackTrace(System.out);
       LOG.log(Level.WARNING, "exception while executing operation", e);
       result = e;
     }
@@ -250,12 +254,37 @@ public class JmxHttpServlet extends HttpServlet {
     }
   }
 
+  /**
+   * Checks if a correlation is considered stale.
+   * <p>
+   * This is how we deal with crashed clients or clients who get disconnected
+   * from the network unexpected. We have to clean up such correlations
+   * in order to avoid leaking memory.
+   *
+   * @param correlation the correlation
+   * @return {@code true} if the correlation is considered stale
+   */
+  private boolean isStale(Correlation correlation) {
+    // age of the correlation in milliseconds
+    long age = System.currentTimeMillis() - correlation.lastUpdate;
+    // if the timeout is 30 seconds and the age of the correlation is 35 seconds
+    // then the next update is only 5 seconds past due
+    long pastDue = age - timeoutMilliseconds;
+    if (pastDue > 0L) {
+      return false;
+    }
+    // if the the correlation is 65 seconds past due and the timeout is 30 seconds
+    // then we missed 2 updates
+    long missedUpdates = pastDue / timeoutMilliseconds;
+    return missedUpdates <= 10L;
+  }
+
   private void handleListen(HttpServletRequest request, HttpServletResponse response) throws IOException {
     Correlation correlation = this.getCorrelation(request, response);
     if (correlation == null) {
       return;
     }
-    if (request.getAttribute(DISPATCH) != null) {
+    if (request.getAttribute(DISPATCH_ATTRIBUTE) != null) {
       response.setContentType("text/plain");
       response.setCharacterEncoding("UTF-8");
 
@@ -270,11 +299,14 @@ public class JmxHttpServlet extends HttpServlet {
         return;
       }
 
-
+      // initial request, just wait
       AsyncContext asyncContext = request.startAsync(request, response);
       correlation.setAsyncContext(asyncContext);
       asyncContext.setTimeout(this.timeoutMilliseconds);
       asyncContext.addListener(DISPATCH_ON_TIMEOUT);
+      // an unregistration event may have happened while a long poll was still running
+      // to we safe the correlation
+      request.setAttribute(CORRELATION_ATTRIBUTE, correlation);
     }
   }
 
@@ -283,8 +315,9 @@ public class JmxHttpServlet extends HttpServlet {
     NotificationRegistry registry = new ServletNotificationRegistry(correlationId);
     Correlation previous = this.correlations.putIfAbsent(correlationId, new Correlation(registry));
     if (previous != null) {
-      LOG.log(Level.WARNING, "correlation: " + correlationId + " already registered");
-      // TODO notify client
+      String message = "correlation: " + correlationId + " already registered";
+      LOG.log(Level.WARNING, message);
+      sendError(response, message);
       return;
     }
     Registration registration = new Registration(correlationId, this.timeoutMilliseconds);
@@ -296,7 +329,18 @@ public class JmxHttpServlet extends HttpServlet {
     if (correlationId == NO_CORRELATION_ID) {
       return;
     }
-    // FIXME
+    Correlation correlation = getCorrelation(request, response);
+    if (correlation == null) {
+      return;
+    }
+
+    this.correlations.remove(correlationId);
+    try {
+      correlation.unregisterListeners(this.server);
+    } catch (OperationsException e) {
+      // has already been logged
+      sendError("unregister failed", e, response);
+    }
   }
 
   private static long getCorrelationId(ServletRequest request, HttpServletResponse response) throws IOException {
@@ -317,6 +361,11 @@ public class JmxHttpServlet extends HttpServlet {
   }
 
   private Correlation getCorrelation(ServletRequest request, HttpServletResponse response) throws IOException {
+    Object attribute = request.getAttribute(CORRELATION_ATTRIBUTE);
+    if (attribute instanceof Correlation) {
+      return (Correlation) attribute;
+    }
+
     long correlationId = getCorrelationId(request, response);
     if (correlationId == NO_CORRELATION_ID) {
       return null;
@@ -325,9 +374,10 @@ public class JmxHttpServlet extends HttpServlet {
     Correlation correlation = this.correlations.get(correlationId);
     if (correlation == null) {
       LOG.log(Level.WARNING, "no correlation found for id: " + correlationId);
-      // TODO send error to client
+      sendError(response, "correlation " + correlationId + " missing");
       return null;
     }
+    correlation.update();
     return correlation;
   }
 
@@ -357,7 +407,109 @@ public class JmxHttpServlet extends HttpServlet {
     response.setContentType("text/plain");
     response.setCharacterEncoding("UTF-8");
     e.printStackTrace(response.getWriter());
-    e.printStackTrace(System.out);
+  }
+
+
+  static final class Correlation {
+
+    private Deque<RemoteNotification> pendingNotifications;
+
+    private AsyncContext asyncContext;
+
+    final NotificationRegistry registry;
+
+    private final Map<Long, ListenerRegistration> listeners;
+
+    private volatile long lastUpdate;
+
+    Correlation(NotificationRegistry registry) {
+      this.registry = registry;
+      // VisualVM needs only one listener
+      this.listeners = new HashMap<>(4);
+      this.update();
+    }
+
+    void update() {
+      lastUpdate = System.currentTimeMillis();
+    }
+
+    synchronized AsyncContext getAsyncContext() {
+      return asyncContext;
+    }
+
+    synchronized void setAsyncContext(AsyncContext asyncContext) {
+      this.asyncContext = asyncContext;
+    }
+
+    synchronized List<RemoteNotification> drainPendingNotifications() {
+      if (this.pendingNotifications == null) {
+        return Collections.emptyList();
+      }
+      List<RemoteNotification> result = new ArrayList<>(pendingNotifications.size());
+      RemoteNotification notification = pendingNotifications.pollFirst();
+      while (notification != null) {
+        result.add(notification);
+        notification = pendingNotifications.pollFirst();
+      }
+      return result;
+    }
+
+    synchronized void dispatch() {
+      if (this.asyncContext == null) {
+        LOG.log(Level.WARNING, "not dispatching no async context");
+        return;
+      }
+
+      ServletRequest suppliedRequest = this.asyncContext.getRequest();
+      suppliedRequest.setAttribute(DISPATCH_ATTRIBUTE, true);
+      try {
+        asyncContext.dispatch();
+      } catch (IllegalStateException e) {
+        LOG.log(Level.WARNING, "already dispatched", e);
+      }
+    }
+
+    synchronized void addNotification(RemoteNotification notification) {
+      if (this.pendingNotifications == null) {
+        this.pendingNotifications = new ConcurrentLinkedDeque<>();
+      }
+      this.pendingNotifications.push(notification);
+    }
+
+    ListenerRegistration getListener(long listenerId) {
+      return this.listeners.get(listenerId);
+    }
+
+    synchronized void unregisterListeners(MBeanServer server) throws OperationsException {
+      List<OperationsException> exceptions = new ArrayList<>();
+      for (Entry<Long, ListenerRegistration> entry : this.listeners.entrySet()) {
+        ListenerRegistration registration = entry.getValue();
+        try {
+          server.removeNotificationListener(registration.name, registration.listener, registration.filter, registration.handback);
+        } catch (ListenerNotFoundException | InstanceNotFoundException e) {
+          LOG.log(Level.SEVERE, "could not unregister listener", e);
+          if (exceptions == null) {
+            exceptions = new ArrayList<>(2);
+          }
+          exceptions.add(e);
+        }
+      }
+      this.listeners.clear();
+      if (exceptions != null) {
+        throw new OperationsException("could not unregister listener");
+      }
+    }
+
+    synchronized void registerListener(long listenerId, ListenerRegistration listenerRegistration) {
+      ListenerRegistration previous = this.listeners.putIfAbsent(listenerId, listenerRegistration);
+      if (previous != null) {
+        LOG.log(Level.WARNING, "duplicate listener exception");
+      }
+    }
+
+    synchronized void removeListener(long listenerId, ListenerRegistration listenerRegistration) {
+      this.listeners.remove(listenerId);
+    }
   }
 
 
@@ -366,7 +518,7 @@ public class JmxHttpServlet extends HttpServlet {
     @Override
     public void onTimeout(AsyncEvent event) throws IOException {
       ServletRequest suppliedRequest = event.getSuppliedRequest();
-      suppliedRequest.setAttribute(DISPATCH, true);
+      suppliedRequest.setAttribute(DISPATCH_ATTRIBUTE, true);
       event.getAsyncContext().dispatch();
     }
 
@@ -401,38 +553,49 @@ public class JmxHttpServlet extends HttpServlet {
 
     @Override
     public void addNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long handbackId) throws IOException {
-//      Correlation correlation = getCorrelation();
-//      if (correlation == null) {
-//        return;
-//      }
-//
-//      Handback handback = new Handback(listenerId, handbackId);
-//      NotificationListener listener = new DispatchingNotificationListener(correlationId);
-//      correlation.registerListener(listenerId, listener);
-//      server.addNotificationListener(name, listener, filter, handback);
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+
+      Handback handback = new Handback(listenerId, handbackId);
+      NotificationListener listener = new DispatchingNotificationListener(correlationId);
+      ListenerRegistration listenerRegistration = new ListenerRegistration(name, listener, filter, handback);
+      correlation.registerListener(listenerId, listenerRegistration);
+      server.addNotificationListener(name, listener, filter, handback);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId) throws IOException {
-//      Correlation correlation = getCorrelation();
-//      if (correlation == null) {
-//        return;
-//      }
-//      NotificationListener listener = correlation.getListener(listenerId);
-//      server.removeNotificationListener(name, listener);
-//      correlation.removeListener(listenerId, listener);
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+      ListenerRegistration listenerRegistration = correlation.getListener(listenerId);
+      if (listenerRegistration.name.equals(name)) {
+        // TODO error
+        return;
+      }
+
+      // TODO check handback null?
+      server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener);
+      correlation.removeListener(listenerId, listenerRegistration);
     }
 
     @Override
     public void removeNotificationListener(ObjectName name, long listenerId, NotificationFilter filter, Long objectId) throws IOException {
-//      Correlation correlation = getCorrelation();
-//      if (correlation == null) {
-//        return;
-//      }
-//      NotificationListener listener = correlation.getListener(listenerId);
-//      Object handback;
-//      server.removeNotificationListener(name, listener, filter, handback);
-//      correlation.removeListener(listenerId, listener);
+      Correlation correlation = getCorrelation();
+      if (correlation == null) {
+        return;
+      }
+      ListenerRegistration listenerRegistration = correlation.getListener(listenerId);
+      if (listenerRegistration.name.equals(name)) {
+        // TODO error
+        return;
+      }
+      Object handback;
+      server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener, listenerRegistration.filter, listenerRegistration.handback);
+      correlation.removeListener(listenerId, listenerRegistration);
     }
 
   }
@@ -478,6 +641,26 @@ public class JmxHttpServlet extends HttpServlet {
     Handback(long listenerId, Long handbackId) {
       this.listenerId = listenerId;
       this.handbackId = handbackId;
+    }
+
+  }
+
+  static final class ListenerRegistration {
+
+    final ObjectName name;
+    final NotificationListener listener;
+    final NotificationFilter filter;
+    final Object handback;
+
+    ListenerRegistration(ObjectName name, NotificationListener listener,  NotificationFilter filter, Object handback) {
+      this.name = name;
+      this.listener = listener;
+      this.filter = filter;
+      this.handback = handback;
+    }
+
+    void unregister() {
+
     }
 
   }

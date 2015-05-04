@@ -562,7 +562,11 @@ public class JmxHttpServlet extends HttpServlet {
       NotificationListener listener = new DispatchingNotificationListener(correlationId);
       ListenerRegistration listenerRegistration = new ListenerRegistration(name, listener, filter, handback);
       correlation.registerListener(listenerId, listenerRegistration);
-      server.addNotificationListener(name, listener, filter, handback);
+      try {
+        server.addNotificationListener(name, listener, filter, handback);
+      } catch (InstanceNotFoundException e) {
+        throw new InstanceNotFoundRuntimeException("instance not found", e);
+      }
     }
 
     @Override
@@ -578,8 +582,12 @@ public class JmxHttpServlet extends HttpServlet {
       }
 
       // TODO check handback null?
-      server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener);
       correlation.removeListener(listenerId, listenerRegistration);
+      try {
+        server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener);
+      } catch (ListenerNotFoundException | InstanceNotFoundException e) {
+        throw new InstanceNotFoundRuntimeException("instance not found", e);
+      }
     }
 
     @Override
@@ -593,9 +601,20 @@ public class JmxHttpServlet extends HttpServlet {
         // TODO error
         return;
       }
-      Object handback;
-      server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener, listenerRegistration.filter, listenerRegistration.handback);
       correlation.removeListener(listenerId, listenerRegistration);
+      try {
+        server.removeNotificationListener(listenerRegistration.name, listenerRegistration.listener, listenerRegistration.filter, listenerRegistration.handback);
+      } catch (ListenerNotFoundException | InstanceNotFoundException e) {
+        throw new InstanceNotFoundRuntimeException("instance not found", e);
+      }
+    }
+
+  }
+
+  static final class InstanceNotFoundRuntimeException extends RuntimeException {
+
+    InstanceNotFoundRuntimeException(String message, Throwable cause) {
+      super(message, cause);
     }
 
   }

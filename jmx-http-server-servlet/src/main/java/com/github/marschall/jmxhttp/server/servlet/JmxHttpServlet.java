@@ -55,9 +55,10 @@ import javax.servlet.http.HttpServletResponse;
 import com.github.marschall.jmxhttp.common.command.ClassLoaderObjectInputStream;
 import com.github.marschall.jmxhttp.common.command.Command;
 import com.github.marschall.jmxhttp.common.command.NotificationRegistry;
+import com.github.marschall.jmxhttp.common.http.HttpConstant;
 import com.github.marschall.jmxhttp.common.http.Registration;
 import com.github.marschall.jmxhttp.common.http.RemoteNotification;
-import com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet.ListenerRegistration;
+import com.github.marschall.jmxhttp.common.http.HttpConstant;
 
 /**
  * Server endpoint for tunneling JMX through HTTP.
@@ -65,15 +66,17 @@ import com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet.ListenerRegist
  * <h3>Basic Protocol</h3>
  * The basic protocol is a follows:
  * <ol>
- *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_REGISTER}
+ *  <li>The client <code>GET</code>s {@value HttpConstant#PARAMETER_ACTION}={@value HttpConstant#ACTION_REGISTER}
  *      to establish a pseudo session.
  *      Result will be a serialized {@link Registration} object. This object
  *      contains the parameters to use for the session. The session id and the long poll
  *      timeout to use.</li>
- *  <li>The client <code>POST</code>s a serialized {@link Command} to {@value #PARAMETER_CORRELATION_ID}=correlationId.
- *      The result will be a serialized Java object, maybe a serialized {@link Exception} to signal and exception
- *      occurred during processing of the command. The response by be gzip compressed.</li>
- *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_UNREGISTER}&amp;{@value #PARAMETER_CORRELATION_ID}=correlationId
+ *  <li>The client <code>POST</code>s a serialized {@link Command} to
+ *      {@value HttpConstant#PARAMETER_CORRELATION_ID}=correlationId. The result will be a serialized Java object,
+ *      maybe a serialized {@link Exception} to signal and exception occurred during processing of the command.
+ *      The response by be gzip compressed.</li>
+ *  <li>The client <code>GET</code>s
+ *      {@value HttpConstant#PARAMETER_ACTION}={@value HttpConstant#ACTION_UNREGISTER}&amp;{@value HttpConstant#PARAMETER_CORRELATION_ID}=correlationId
  *      to end the pseudo session.</li>
  * </ol>
  *
@@ -82,7 +85,8 @@ import com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet.ListenerRegist
  * <a href="http://en.wikipedia.org/wiki/Push_technology#Long_polling">long polling</a>.
  * The protocol is a follows:
  * <ol>
- *  <li>The client <code>GET</code>s {@value #PARAMETER_ACTION}={@value #ACTION_LISTEN}&amp;{@value #PARAMETER_CORRELATION_ID}=correlationId
+ *  <li>The client <code>GET</code>s
+ *      {@value HttpConstant#PARAMETER_ACTION}={@value HttpConstant#ACTION_LISTEN}&amp;{@value HttpConstant#PARAMETER_CORRELATION_ID}=correlationId
  *      As soon as a notification is available the server will send a
  *      serialized {@link List} of {@link RemoteNotification}.
  *      The server will wait sending the response up to {@value #POLL_TIMEOUT_SECONDS_PARAMETER}

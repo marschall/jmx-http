@@ -3,6 +3,10 @@ JMX-HTTP Connector
 
 A JMX connector (client and server) that runs JMX through HTTP (or HTTPS).
 
+### What does the URL format look like?
+
+[service:jmx:http://localhost:8080/jmx-http](service:jmx:http://localhost:8080/jmx-http)
+
 ### Why?
 
 This connector is intended to be used in cases where you'll already have an HTTP port open. This gives it the following advantages:
@@ -45,10 +49,7 @@ Check out the class comment of `com.github.marschall.jmxhttp.server.servlet.JmxH
 
 Caveats
 -------
- * long polling may delay JVM shut down
-
-TODO
-----
- null checks in commands
+ * Long polling may delay JVM shut down.
+ * Listeners are prone to introduce memory leaks. Make sure you register the same listener object only once and use the same ObjectName for registering and unregistering.
 
 

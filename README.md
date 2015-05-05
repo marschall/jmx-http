@@ -7,7 +7,7 @@ A JMX connector (client and server) that runs JMX through HTTP (or HTTPS).
 
 This connector is intended to be used in cases where you'll already have an HTTP port open. This gives it the following advantages:
 
- * HTTP punches through any firewall. In general .
+ * HTTP punches through any firewall.
  * An existing port can be used.
  * HTTP is already supported by a lot of network infrastructure.
   * Piggy backs on your existing HTTP infrastructure for authentication, authorization and encryption.
@@ -16,8 +16,8 @@ This connector is intended to be used in cases where you'll already have an HTTP
   * notifications are done with long poll for maximum compatibility and low latency
     * for minimal resource use servlet 3 async support is used
   * No dependencies other than servlet API and Java SE
-   * The server server is XX kb.
-   * The client client is XX kb.
+   * The server server is 50 kb.
+   * The client client is 40 kb.
 
 ### Why don't you use WebSockets?
 
@@ -25,7 +25,7 @@ A lot of network infrastructure does not (yet) support WebSockets. Using WebSock
 
 ### What about security?
 
-Per default no security is applied. You can either you your existing networking configuration to secure access or build a new WAR with servlet security. The WAR project contains only the `web.xml` so this is easy.
+Per default no security is applied. You can either use your existing networking configuration to secure access or build a new WAR with servlet security. The WAR project contains only the `web.xml` so this is easy.
 The client supports HTTP Basic authentication.
 
 ### What about servlet logging?
@@ -36,10 +36,12 @@ The servlet uses `java.util.logging` configure your server accordingly.
 
 You should not connect to the application through a load balancer since you want to monitor a specific server rather than a "random" one.
 
-Protocol Details
-----------------
+Protocol
+--------
 
 The client serializes each request as a command object and POSTs it to a servlet. The servlet deserializes the command and executes it. Afterwards the result is serialized and sent back to the client.
+
+Check out the class comment of `com.github.marschall.jmxhttp.server.servlet.JmxHttpServlet` for more details.
 
 Caveats
 -------

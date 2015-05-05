@@ -5,7 +5,9 @@ A JMX connector (client and server) that runs JMX through HTTP (or HTTPS).
 
 ### What does the URL format look like?
 
-[service:jmx:http://localhost:8080/jmx-http](service:jmx:http://localhost:8080/jmx-http)
+    service:jmx:http(s)://${host}:${port}/${servlet-path}
+
+eg. <a href="service:jmx:http://localhost:8080/jmx-http">service:jmx:http://localhost:8080/jmx-http</a>
 
 ### Why?
 

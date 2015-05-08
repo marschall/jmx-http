@@ -13,7 +13,7 @@ eg. <a href="service:jmx:http://localhost:8080/jmx-http">service:jmx:http://loca
 
 This connector is intended to be used in cases where you'll already have an HTTP port open. This gives it the following advantages:
 
- * HTTP punches through any firewall.
+ * HTTP generally punches through firewalls.
  * An existing port can be used.
  * HTTP is already supported by a lot of network infrastructure.
   * Piggy backs on your existing HTTP infrastructure for authentication, authorization and encryption.

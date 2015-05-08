@@ -229,7 +229,7 @@ public class JmxHttpServlet extends HttpServlet {
         GZIPOutputStream gzip = new GZIPOutputStream(out);
         ObjectOutputStream stream = new ObjectOutputStream(gzip)) {
       response.setContentType(JAVA_SERIALIZED_OBJECT);
-      response.setHeader("Transfer-Encoding", "gzip");
+      response.setHeader("Content-Encoding", "gzip");
       stream.writeObject(result);
     } catch (NotSerializableException e) {
       // various objects are exposed over JMX that are not serializable

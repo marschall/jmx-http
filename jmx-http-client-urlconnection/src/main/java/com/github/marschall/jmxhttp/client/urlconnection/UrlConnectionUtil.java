@@ -26,14 +26,14 @@ final class UrlConnectionUtil {
   private UrlConnectionUtil() {
     throw new AssertionError("not instantiable");
   }
-  
+
   static Object readResponseAsObject(HttpURLConnection urlConnection, ClassLoader classLoader) throws IOException, JMException {
     int status = urlConnection.getResponseCode();
     if (status == 200) {
-      String transferEncoding = urlConnection.getHeaderField("Transfer-Encoding");
+      String contentEncoding = urlConnection.getHeaderField("Content-Encoding");
       try (InputStream in = urlConnection.getInputStream();
           BufferedInputStream buffered = new BufferedInputStream(in)) {
-        if ("gzip".equals(transferEncoding)) {
+        if ("gzip".equals(contentEncoding)) {
           try (GZIPInputStream stream = new GZIPInputStream(buffered)) {
             return readFromStream(stream, classLoader);
           }

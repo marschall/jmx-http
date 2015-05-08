@@ -485,8 +485,15 @@ final class JmxHttpConnection implements MBeanServerConnection {
         } catch (IOException e) {
           // TODO connection listeners?
           LOG.log(Level.WARNING, "could not read response", e);
-          continue;
+          // we should not go into a spin loop eg. when a server or network error happens
+          // or eg the server is no longer available
+          // this should not happen if the listener or handback is not serializable because
+          // we don't send them to the server
+          // disconnect in this case and make the UI read only
+          this.notifier.exceptionOccurred(e);
+          break;
         } catch (JMException e) {
+          // REVIEW break as well?
           LOG.log(Level.WARNING, "could not read response", e);
           continue;
         }

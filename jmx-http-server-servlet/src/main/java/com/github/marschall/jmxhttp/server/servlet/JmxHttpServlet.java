@@ -485,7 +485,7 @@ public class JmxHttpServlet extends HttpServlet {
     }
 
     synchronized void unregisterListeners(MBeanServer server) throws OperationsException {
-      List<OperationsException> exceptions = new ArrayList<>();
+      List<OperationsException> exceptions = null;
       for (Entry<Long, ListenerRegistration> entry : this.listeners.entrySet()) {
         ListenerRegistration registration = entry.getValue();
         try {
